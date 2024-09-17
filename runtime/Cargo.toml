@@ -1,0 +1,10 @@
+[package]
+name = "runtime"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+permute_std = { path = "../permute_std" }
+lazy-regex = "3.3"
+smallvec = { version = "1.13", features = ["union"] }
