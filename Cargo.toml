@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "compile",
+    "compile", "permute_front",
     "permute_std",
     "runtime",
 ]

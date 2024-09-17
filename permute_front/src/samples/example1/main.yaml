@@ -1,0 +1,22 @@
+# Permute header to indicate to framework that this is a configuration file.
+permute:
+  version:
+    0.1 # Version of the Permute specification. This is required.
+    # One project can have multiple versions of the Permute specification.
+    # This allows for backwards compatibility and incremental improvements.
+  type: main # Declares this file as a main file. This is required.
+
+name: Sample Process Name
+cfg:
+  er: # `er` is a binding that refers to the configured employment record source.
+    EmploymentRecord: # Type that is defined by file `EmploymentRecord.yaml`
+      filter:
+        date_from: 2019-01-01
+        date_to: 2019-02-01 # Not inclusive
+        exclude_terminations: Yes
+  sink: # `sink` is a binding that refers to the configured CSV sink.
+    Csv: # Type that is defined by file `Csv.yaml`
+      feeder: CsvFeed # Type that is defined by file `CsvFeed.yaml`
+      path: output.csv
+      record_ty: EmploymentRecord
+      each: er # Connect the employment record source to the CSV sink

@@ -1,0 +1,60 @@
+# This file defines the schema for an employment record sink.
+# Permute framework will use this schema to validate the data sink, which should be
+# registered from the implementation code. If this schema is not compatible with the registered
+# data sink, the framework will raise an error.
+# So this file is a contract between the implementation code and the configuration file.
+#
+# The reason it is done that way is to allow the implementation code to be decoupled from the
+# configuration file. Also, any Permute validators would be able to validate YAML configuration
+# without knowing the implementation specifics.
+
+permute:
+  version: 0.1
+  type: sink # This file describes a sink, to which data can be written.
+  use:
+    - crate::csv_sink::*
+
+params:
+  path:
+    type: String
+    explain: Path to the CSV file to write to.
+  date_fmt:
+    type: impl Fn(Date) -> String # Just like in Rust, dynamic traits can be "dyn"amic or "impl"emented.
+    explain: Function to format a date as a string.
+  none_fmt:
+    type: impl Fn(&dyn Any) -> String
+    explain: Function to format None values of any type.
+  row_sequence:
+    type: RowSequence
+    explain: Generator for a sequence of row numbers.
+  record_ty:
+    type: impl Any
+    explain: Type of the records to write to the CSV file.
+  each:
+    type: impl Iterator<Item = self::record_ty>
+    explain: Iterator over the records to write to the CSV file.
+  write:
+    type: Vec<&dyn WriteFn<self::record_ty>>
+    explain: Functions to write fields of the records to the CSV file.
+    check:
+      - explain: The write functions must be defined for the record type.
+        define: self.len() > 0
+  header:
+    type: Option<Vec<String>>
+    default: None
+    explain: Optional header row for the CSV file.
+    check:
+      - define: self?.len() > 0
+        explain: The header row must be defined if it is not None.
+  delimiter:
+    type: String
+    default: ","
+    explain: Delimiter to use between fields in the CSV file.
+    check: self.len() == 1
+
+# Checks that are performed on the parameters.
+# Those that cannot be defined in the parameter definitions because they
+# operate on multiple parameters.
+check:
+  - explain: The header row must have the same number of fields as the write functions.
+    define: self.header?.len() == self.write.len()

@@ -1,0 +1,41 @@
+# This file defines the schema for an employment record source.
+# Permute framework will use this schema to validate the data source, which should be
+# registered from the implementation code. If this schema is not compatible with the registered
+# data source, the framework will raise an error.
+# So this file is a contract between the implementation code and the configuration file.
+#
+# The reason it is done that way is to allow the implementation code to be decoupled from the
+# configuration file. Also, any Permute validators would be able to validate YAML configuration
+# without knowing the implementation specifics.
+
+permute:
+  version: 0.1
+  type: source
+  use:
+    - crate::monetary::Monetary # Example of type `Monetary` import from another in-project file
+    - chrono::NaiveDate # Example of type `NaiveDate` import from external crate
+
+filters:
+  date_from:
+    type: Option<NaiveDate>
+    default: None
+  date_to:
+    type: Option<NaiveDate>
+    default: None
+  exclude_terminations:
+    type: Option<bool>
+    default: None
+
+columns:
+  employee_id:
+    type: String
+    check:
+      - self.regex_is_match("^SID\d{6}$")
+  hire_date:
+    type: Date
+  termination_date:
+    type: Option<NaiveDate>
+  salary:
+    type: Monetary
+  meta:
+    type: Option<HashMap<String, &dyn Any>>
