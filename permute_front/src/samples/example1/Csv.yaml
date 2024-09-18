@@ -14,7 +14,7 @@ permute:
   use:
     - crate::csv_sink::*
 
-params:
+param:
   path:
     type: String
     explain: Path to the CSV file to write to.

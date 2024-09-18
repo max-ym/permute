@@ -23,6 +23,7 @@ pub struct Main {
     #[serde(rename = "permute")]
     pub header: Header,
     pub name: String,
+    pub explain: Option<String>,
     pub cfg: MainCfg,
 }
 
@@ -93,23 +94,32 @@ pub struct Source {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SourceFilter {
+    pub explain: Option<String>,
     #[serde(rename = "type")]
     pub ty: RustTy,
     pub default: Option<String>,
-    pub check: Option<Vec<CheckExpr>>,
+    pub check: Option<Check>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SourceColumn {
+    pub explain: Option<String>,
     #[serde(rename = "type")]
     pub ty: RustTy,
-    pub check: Option<Vec<CheckExpr>>,
+    pub check: Option<Check>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum Check {
+    Inline(CheckExpr),
+    List(Vec<CheckExpr>),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum CheckExpr {
-    ExprExpl { explain: String, expr: RustExpr },
+    ExprExpl { explain: String, define: RustExpr },
     Expr(RustExpr),
 }
 
@@ -120,6 +130,23 @@ pub struct RustExpr(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct RustTy(pub String);
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Sink {
+    #[serde(rename = "permute")]
+    pub header: Header,
+    pub explain: Option<String>,
+    pub param: HashMap<String, SinkColumn>,
+    pub check: Option<Check>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SinkColumn {
+    #[serde(rename = "type")]
+    pub ty: RustTy,
+    pub explain: Option<String>,
+    pub check: Option<Check>,
+}
 
 #[cfg(test)]
 mod tests {
@@ -137,5 +164,12 @@ mod tests {
         let s = include_str!("../samples/example1/EmploymentRecord.yaml");
         let source: Source = serde_yml::from_str(s).unwrap();
         println!("{source:#?}");
+    }
+
+    #[test]
+    fn deserialize_sink() {
+        let s = include_str!("../samples/example1/Csv.yaml");
+        let sink: Sink = serde_yml::from_str(s).unwrap();
+        println!("{sink:#?}");
     }
 }
