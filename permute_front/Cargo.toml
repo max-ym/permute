@@ -5,6 +5,11 @@ edition = "2021"
 
 [dependencies]
 hashbrown = { version = "0.14", features = ["serde"] }
-syn = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_yml = "0.0.12"
+
+# Working with Rust code parsing, unparsing and formatting.
+syn = { version = "2.0", features = ["clone-impls", "extra-traits"] }
+quote = "1.0"
+prettyplease = "0.2"
+rust-format = { version = "0.3", features = ["pretty_please", "token_stream"] }
