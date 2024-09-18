@@ -2,3 +2,6 @@
 
 /// YAML file configurations.
 pub mod yaml;
+
+/// Context with all registered configurations.
+pub mod context;
