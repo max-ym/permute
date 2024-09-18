@@ -5,6 +5,9 @@ pub struct Ctx {
     /// The name of the project. Cannot be empty.
     name: String,
 
+    /// User comment about this project. Empty string means no comment.
+    explain: String,
+
     /// Data sources.
     srcs: Vec<DataSource>,
 
@@ -15,6 +18,14 @@ pub struct Ctx {
 impl Ctx {
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn explain(&self) -> Option<&str> {
+        if self.explain.is_empty() {
+            None
+        } else {
+            Some(&self.explain)
+        }
     }
 
     pub fn sources(&self) -> &[DataSource] {
@@ -60,6 +71,9 @@ pub struct DataSource {
     /// Name of the source. Cannot be empty.
     name: String,
 
+    /// User comment about this source. Empty string means no comment.
+    explain: String,
+
     /// Applicable filters on the source query.
     filters: HashMap<String, FilterTy>,
 
@@ -73,6 +87,14 @@ pub struct DataSource {
 impl DataSource {
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn explain(&self) -> Option<&str> {
+        if self.explain.is_empty() {
+            None
+        } else {
+            Some(&self.explain)
+        }
     }
 
     pub fn filters(&self) -> &HashMap<String, FilterTy> {
@@ -92,11 +114,24 @@ pub struct FilterTy {
     /// Default value for the filter, to use when it is not explicitly set.
     default: Option<syn::Expr>,
 
+    /// User comment about this filter. Empty string means no comment.
+    explain: String,
+
     /// Data type of the filter field.
     ty: syn::Type,
 
     /// Checks that are applied to the filter.
     checks: Vec<ExplainExpr>,
+}
+
+impl FilterTy {
+    pub fn explain(&self) -> Option<&str> {
+        if self.explain.is_empty() {
+            None
+        } else {
+            Some(&self.explain)
+        }
+    }
 }
 
 pub struct SourceColumn {
@@ -148,6 +183,9 @@ pub struct Sink {
     /// Name of the sink. Cannot be empty.
     name: String,
 
+    /// User comment about this sink. Empty string means no comment.
+    explain: String,
+
     /// Parameters that are passed to the sink.
     params: HashMap<String, SinkParam>,
 
@@ -168,6 +206,14 @@ impl Sink {
     pub fn checks(&self) -> &[ExplainExpr] {
         &self.checks
     }
+
+    pub fn explain(&self) -> Option<&str> {
+        if self.explain.is_empty() {
+            None
+        } else {
+            Some(&self.explain)
+        }
+    }
 }
 
 /// Sink parameter.
@@ -180,4 +226,17 @@ pub struct SinkParam {
 
     /// Checks that are applied to the parameter.
     checks: Vec<ExplainExpr>,
+
+    /// User comment about this sink. Empty string means no comment.
+    explain: String,
+}
+
+impl SinkParam {
+    pub fn explain(&self) -> Option<&str> {
+        if self.explain.is_empty() {
+            None
+        } else {
+            Some(&self.explain)
+        }
+    }
 }
