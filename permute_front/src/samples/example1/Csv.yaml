@@ -19,7 +19,7 @@ params:
     type: String
     explain: Path to the CSV file to write to.
   date_fmt:
-    type: impl Fn(Date) -> String # Just like in Rust, dynamic traits can be "dyn"amic or "impl"emented.
+    type: impl Fn(Date) -> String # Just like in Rust, trait types can be "dyn"amic or "impl"emented.
     explain: Function to format a date as a string.
   none_fmt:
     type: impl Fn(&dyn Any) -> String
