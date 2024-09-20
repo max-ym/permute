@@ -1,5 +1,7 @@
 use hashbrown::HashMap;
 
+type IdentId = usize;
+
 /// Context for the project.
 pub struct Ctx {
     /// The name of the project. Cannot be empty.
@@ -13,6 +15,11 @@ pub struct Ctx {
 
     /// Data sinks.
     sinks: Vec<Sink>,
+
+    /// Pipes that connect sources to sinks.
+    /// Each pipe here is a tuple of source and sink indexes,
+    /// in [Self::sources] and [Self::sinks].
+    pipes: Vec<(IdentId, IdentId)>,
 }
 
 impl Ctx {
@@ -55,6 +62,22 @@ impl Ctx {
         self.sinks.push(sink);
         Ok(())
     }
+
+    pub fn add_pipe(&mut self, src: &str, sink: &str) -> Result<(), AddPipeErr> {
+        let src_idx = self
+            .srcs
+            .iter()
+            .position(|s| s.name() == src)
+            .ok_or_else(|| AddPipeErr::SourceNotFound(src.to_string()))?;
+        let sink_idx = self
+            .sinks
+            .iter()
+            .position(|s| s.name() == sink)
+            .ok_or_else(|| AddPipeErr::SinkNotFound(sink.to_string()))?;
+
+        self.pipes.push((src_idx, sink_idx));
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -65,6 +88,12 @@ pub enum AddSourceErr {
 #[derive(Debug)]
 pub enum AddSinkErr {
     NameExists(String),
+}
+
+#[derive(Debug)]
+pub enum AddPipeErr {
+    SourceNotFound(String),
+    SinkNotFound(String),
 }
 
 pub struct DataSource {
