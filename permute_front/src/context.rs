@@ -240,3 +240,20 @@ impl SinkParam {
         }
     }
 }
+
+/// Track data from source column to all sinks.
+pub struct TrackColumn {
+    pub src: String,
+    pub col: String,
+}
+
+/// Track data from sink field to all source columns.
+pub struct TrackField {
+    pub sink: String,
+    pub field: String,
+}
+
+/// Track data used in this function to all other functions, and source, and sink fields.
+pub struct TrackFn {
+    pub fn_path: Vec<String>,
+}
