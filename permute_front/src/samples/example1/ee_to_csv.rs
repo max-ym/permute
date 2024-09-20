@@ -56,4 +56,8 @@ impl permute::Sink<EmploymentRecord> for Ee2Csv {
 
         self.csv.put(record)
     }
+
+    fn done(&mut self) -> Result<(), Self::Error> {
+        self.csv.done()
+    }
 }
