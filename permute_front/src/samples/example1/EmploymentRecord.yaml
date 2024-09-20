@@ -32,7 +32,7 @@ columns:
     check:
       - self.regex_is_match("^SID\d{6}$")
   hire_date:
-    type: Date
+    type: NaiveDate
   termination_date:
     type: Option<NaiveDate>
   salary:

@@ -7,15 +7,21 @@ permute:
   type: main # Declares this file as a main file. This is required.
 
 name: Sample Process Name
-cfg:
+pipe: # Pipelines that execute the process. Bindings are defined below in `let` map.
+  - er -> feed
+let:
   er: # `er` is a binding that refers to the configured employment record source.
     EmploymentRecord: # Type that is defined by file `EmploymentRecord.yaml`
       date_from: 2019-01-01
       date_to: 2019-02-01 # Not inclusive
       exclude_terminations: Yes
-  sink: # `sink` is a binding that refers to the configured CSV sink.
+  csv: # `csv` is a binding that refers to the configured CSV sink.
     Csv: # Type that is defined by file `Csv.yaml`
-      feeder: CsvFeed # Type that is defined by file `CsvFeed.yaml`
       path: output.csv
-      record_ty: EmploymentRecord
-      each: er # Connect the employment record source to the CSV sink
+      date_fmt: |
+        |date| date.format("%Y-%m-%d")
+  feed:
+    # Since this time is defined in Rust code, we don't pass the parameters, but
+    # instead use inlined Rust code to create the object.
+    ee_to_csv::Ee2Csv: |
+      ee_to_csv::Ee2Csv::new(csv) // Use initialized `csv` binding from above.

@@ -23,22 +23,13 @@ param:
     explain: Function to format a date as a string.
   none_fmt:
     type: impl Fn(&dyn Any) -> String
+    default: | # Default value is a lambda function.
+      |_| String::new()
     explain: Function to format None values of any type.
   row_sequence:
     type: RowSequence
+    default: RowSequence::new(1)
     explain: Generator for a sequence of row numbers.
-  record_ty:
-    type: impl Any
-    explain: Type of the records to write to the CSV file.
-  each:
-    type: impl Iterator<Item = self::record_ty>
-    explain: Iterator over the records to write to the CSV file.
-  write:
-    type: Vec<&dyn WriteFn<self::record_ty>>
-    explain: Functions to write fields of the records to the CSV file.
-    check:
-      - explain: The write functions must be defined for the record type.
-        define: self.len() > 0
   header:
     type: Option<Vec<String>>
     default: None
@@ -50,7 +41,12 @@ param:
     type: String
     default: ","
     explain: Delimiter to use between fields in the CSV file.
-    check: self.len() == 1
+    check: self.len() >= 1
+  eol:
+    type: String
+    default: '\n'
+    explain: End of line character to use at the end of each row.
+    check: self.len() >= 1 
 
 # Checks that are performed on the parameters.
 # Those that cannot be defined in the parameter definitions because they
