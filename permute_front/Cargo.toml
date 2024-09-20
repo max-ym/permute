@@ -11,5 +11,6 @@ serde_yml = "0.0.12"
 # Working with Rust code parsing, unparsing and formatting.
 syn = { version = "2.0", features = ["clone-impls", "extra-traits"] }
 quote = "1.0"
+proc-macro2 = "1.0"
 prettyplease = "0.2"
 rust-format = { version = "0.3", features = ["pretty_please", "token_stream"] }

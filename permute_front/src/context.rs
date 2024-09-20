@@ -2,6 +2,9 @@ use hashbrown::HashMap;
 
 type IdentId = usize;
 
+/// Code generation for the [Ctx](crate::context::Ctx).
+pub mod codegen;
+
 /// Context for the project.
 pub struct Ctx {
     /// The name of the project. Cannot be empty.
@@ -78,6 +81,13 @@ impl Ctx {
         self.pipes.push((src_idx, sink_idx));
         Ok(())
     }
+
+    pub fn pipes(&self) -> impl Iterator<Item = (&DataSource, &Sink)> {
+        self.pipes
+            .iter()
+            .copied()
+            .map(|(src, sink)| (&self.srcs[src], &self.sinks[sink]))
+    }
 }
 
 #[derive(Debug)]
@@ -97,6 +107,10 @@ pub enum AddPipeErr {
 }
 
 pub struct DataSource {
+    /// The name based on the source file. Cannot be empty.
+    /// This is later the name of the struct in the generated code.
+    src_name: String,
+
     /// Name of the source. Cannot be empty.
     name: String,
 
@@ -114,6 +128,10 @@ pub struct DataSource {
 }
 
 impl DataSource {
+    pub fn src_name(&self) -> &str {
+        &self.src_name
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -154,12 +172,24 @@ pub struct FilterTy {
 }
 
 impl FilterTy {
+    pub fn default(&self) -> Option<&syn::Expr> {
+        self.default.as_ref()
+    }
+
     pub fn explain(&self) -> Option<&str> {
         if self.explain.is_empty() {
             None
         } else {
             Some(&self.explain)
         }
+    }
+
+    pub fn ty(&self) -> &syn::Type {
+        &self.ty
+    }
+
+    pub fn checks(&self) -> &[ExplainExpr] {
+        &self.checks
     }
 }
 
@@ -204,6 +234,10 @@ impl ExplainExpr {
         } else {
             Some(&self.explain)
         }
+    }
+
+    pub fn expr(&self) -> &syn::Expr {
+        &self.expr
     }
 }
 
