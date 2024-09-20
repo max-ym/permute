@@ -24,12 +24,17 @@ pub struct Main {
     pub header: Header,
     pub name: String,
     pub explain: Option<String>,
-    pub cfg: MainCfg,
+
+    #[serde(rename = "pipe")]
+    pub pipes: Vec<String>,
+
+    #[serde(rename = "let")]
+    pub bindings: MainBindings,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(transparent)]
-pub struct MainCfg {
+pub struct MainBindings {
     pub bindings: HashMap<String, MainBinding>,
 }
 
@@ -37,7 +42,14 @@ pub struct MainCfg {
 pub struct MainBinding {
     /// Name of the type that this binding is for.
     pub ty: RustTy,
-    pub cfg: HashMap<String, MainBindingField>,
+    pub cfg: BindingCfg,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum BindingCfg {
+    Inline(String),
+    Map(HashMap<String, MainBindingField>),
 }
 
 impl<'de> Deserialize<'de> for MainBinding {
@@ -45,7 +57,14 @@ impl<'de> Deserialize<'de> for MainBinding {
     where
         D: serde::Deserializer<'de>,
     {
-        let actual: HashMap<String, HashMap<String, MainBindingField>> =
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Either<T, U> {
+            First(T),
+            Second(U),
+        }
+
+        let actual: HashMap<String, Either<String, HashMap<String, MainBindingField>>> =
             Deserialize::deserialize(deserializer)?;
 
         if actual.len() != 1 {
@@ -53,6 +72,15 @@ impl<'de> Deserialize<'de> for MainBinding {
         }
 
         let (ty, cfg) = actual.into_iter().next().unwrap();
+
+        let cfg = match cfg {
+            Either::First(s) => {
+                // Inline Rust code.
+                BindingCfg::Inline(s)
+            }
+            Either::Second(map) => BindingCfg::Map(map),
+        };
+
         Ok(MainBinding {
             ty: RustTy(ty),
             cfg,
