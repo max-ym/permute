@@ -9,6 +9,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yml = "0.0.12"
 log = "0.4"
 thiserror = "1.0"
+smallvec = { version = "1.13", features = ["serde", "union", "const_generics", "const_new"] }
+compact_str = "0.8.0"
 
 # Working with Rust code parsing, unparsing and formatting.
 syn = { version = "2.0", features = ["clone-impls", "extra-traits"] }
