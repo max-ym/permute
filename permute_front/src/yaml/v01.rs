@@ -2,10 +2,15 @@ use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Header {
     pub version: String,
     #[serde(rename = "type")]
     pub ty: FileKind,
+
+    #[serde(default)]
+    #[serde(rename = "use")]
+    pub uses: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -18,6 +23,7 @@ pub enum FileKind {
 
 /// The main file of the project.
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Main {
     /// Project name.
     #[serde(rename = "permute")]
@@ -30,6 +36,15 @@ pub struct Main {
 
     #[serde(rename = "let")]
     pub bindings: MainBindings,
+}
+
+impl Main {
+    /// Load the main file from the given path.
+    pub fn load_from_path(path: &std::path::Path) -> Result<Self, super::Error> {
+        let s = std::fs::read_to_string(path)?;
+        let main: Main = serde_yml::from_str(&s)?;
+        Ok(main)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -113,6 +128,7 @@ pub enum MainBindingField {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Source {
     #[serde(rename = "permute")]
     pub header: Header,
@@ -121,15 +137,17 @@ pub struct Source {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceFilter {
     pub explain: Option<String>,
     #[serde(rename = "type")]
     pub ty: RustTy,
-    pub default: Option<String>,
+    pub default: Option<RustExpr>,
     pub check: Option<Check>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceColumn {
     pub explain: Option<String>,
     #[serde(rename = "type")]
@@ -160,6 +178,7 @@ pub struct RustExpr(pub String);
 pub struct RustTy(pub String);
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Sink {
     #[serde(rename = "permute")]
     pub header: Header,
@@ -169,11 +188,13 @@ pub struct Sink {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SinkColumn {
     #[serde(rename = "type")]
     pub ty: RustTy,
     pub explain: Option<String>,
     pub check: Option<Check>,
+    pub default: Option<RustExpr>,
 }
 
 #[cfg(test)]
