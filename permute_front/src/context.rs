@@ -25,7 +25,25 @@ pub struct Ctx {
     pipes: Vec<(IdentId, IdentId)>,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Project name cannot be empty")]
+pub struct EmptyNameError;
+
 impl Ctx {
+    pub fn new(name: String, explain: Option<String>) -> Result<Self, EmptyNameError> {
+        if name.is_empty() {
+            return Err(EmptyNameError);
+        }
+
+        Ok(Self {
+            name,
+            explain: explain.unwrap_or_default(),
+            srcs: Vec::new(),
+            sinks: Vec::new(),
+            pipes: Vec::new(),
+        })
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
