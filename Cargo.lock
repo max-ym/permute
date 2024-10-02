@@ -222,6 +222,7 @@ name = "permute_front"
 version = "0.1.0"
 dependencies = [
  "hashbrown",
+ "log",
  "prettyplease 0.2.22",
  "proc-macro2",
  "quote",

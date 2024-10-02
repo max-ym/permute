@@ -302,6 +302,18 @@ impl SinkParam {
             Some(&self.explain)
         }
     }
+
+    pub fn default(&self) -> Option<&syn::Expr> {
+        self.default.as_ref()
+    }
+
+    pub fn ty(&self) -> &syn::Type {
+        &self.ty
+    }
+
+    pub fn checks(&self) -> &[ExplainExpr] {
+        &self.checks
+    }
 }
 
 /// Track data from source column to all sinks.
