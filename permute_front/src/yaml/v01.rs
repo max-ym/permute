@@ -134,6 +134,8 @@ pub struct Source {
     pub header: Header,
     pub filters: HashMap<String, SourceFilter>,
     pub columns: HashMap<String, SourceColumn>,
+    pub filter_check: Option<Check>,
+    pub column_check: Option<Check>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -118,9 +118,20 @@ impl ImportedTy {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Pipe<'main> {
-    pub input: &'main str,
-    pub output: &'main str,
+    input: &'main str,
+    output: &'main str,
+}
+
+impl<'main> Pipe<'main> {
+    pub fn input(&self) -> &'main str {
+        self.input
+    }
+
+    pub fn output(&self) -> &'main str {
+        self.output
+    }
 }
 
 /// Connection between some item's type and optional related "use" clause.
@@ -183,4 +194,102 @@ impl MainBinding {
     pub fn cfg(&self) -> &super::v01::BindingCfg {
         &self.cfg
     }
+}
+
+pub struct Sink {
+    /// Name of the sink. This is a valid Rust identifier.
+    name: CompactString,
+
+    explain: String,
+
+    /// Parameters that are passed to the sink.
+    params: Vec<SinkParam>,
+
+    /// Checks that are performed on the sink defined in the configuration,
+    /// outside parameters, hence applicable to configuration of a sink as a whole.
+    additional_checks: Vec<Check>,
+
+    /// List of types that are imported from other modules. This is done via "use" clause.
+    /// This unwraps all "use"s when they are both just paths like "std::slice::Iter" and
+    /// other more complex ones.
+    imported_ty: Vec<ImportedTy>,
+}
+
+pub struct Check {
+    /// Explanation for the check. May be empty.
+    explain: String,
+
+    /// The expression that is used to check the condition.
+    define: RustExpr,
+}
+
+/// Rust expression parsed from the configuration file. At this stage
+/// it is already parsed into AST and is known to be a valid Rust expression.
+pub struct RustExpr(syn::Expr);
+
+pub struct SinkParam {
+    /// Type ID of the parameter. Refers to [Sink::imported_ty] type's index.
+    ty: TypeId,
+
+    /// Name of the parameter. This is a valid Rust identifier.
+    name: CompactString,
+
+    /// Checks that are performed on the parameter defined in the configuration.
+    /// Can be none.
+    checks: SmallVec<[Check; 1]>,
+
+    /// Default value for the parameter. This is optional and may be None.
+    default: Option<RustExpr>,
+}
+
+pub struct Source {
+    /// Name of the source. This is a valid Rust identifier.
+    name: CompactString,
+
+    /// Explanation for the source. May be empty.
+    explain: String,
+
+    filters: Vec<SourceFilter>,
+
+    columns: Vec<SourceColumn>,
+
+    /// Checks that are performed on the source defined in the configuration,
+    /// outside parameters, hence applicable to configuration of a source as a whole.
+    filter_additional_checks: Vec<Check>,
+
+    /// Checks that are performed on the source data columns,
+    /// to verify correctness of the data in general, with relation to one or several columns.
+    column_additional_checks: Vec<Check>,
+
+    /// List of types that are imported from other modules. This is done via "use" clause.
+    /// This unwraps all "use"s when they are both just paths like "std::slice::Iter" and
+    /// other more complex ones.
+    imported_ty: Vec<ImportedTy>,
+}
+
+pub struct SourceFilter {
+    /// Explanation for the filter. May be empty.
+    explain: String,
+
+    /// Type ID of the filter. Refers to [Source::imported_ty] type's index.
+    ty: TypeId,
+
+    /// Default value for the filter. This is optional and may be None.
+    default: Option<RustExpr>,
+
+    /// Checks that are performed on the filter defined in the configuration.
+    /// Can be none.
+    checks: SmallVec<[Check; 1]>,
+}
+
+pub struct SourceColumn {
+    /// Explanation for the column. May be empty.
+    explain: String,
+
+    /// Type ID of the column. Refers to [Source::imported_ty] type's index.
+    ty: TypeId,
+
+    /// Checks that are performed on the column defined in the configuration.
+    /// Can be none.
+    checks: SmallVec<[Check; 1]>,
 }
