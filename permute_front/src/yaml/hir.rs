@@ -1,5 +1,6 @@
 use compact_str::CompactString;
 use hashbrown::HashMap;
+use log::*;
 use smallvec::SmallVec;
 
 type IdentId = u16;
@@ -53,6 +54,149 @@ impl Main {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum MainError {
+    #[error("Failed to parse use clause. {0}")]
+    UseParse(syn::Error),
+
+    #[error("Invalid project name. `{0}`")]
+    InvalidName(String),
+
+    #[error(transparent)]
+    PipeParseError(#[from] StringToPipeParseError),
+
+    #[error("Binding `{ident}` not found for pipe `{pipe}`")]
+    BindingNotFound { pipe: String, ident: String },
+
+    #[error("Failed to parse binding type. {0}")]
+    BindingTypeParse(syn::Error),
+}
+
+impl TryFrom<super::v01::Main> for Main {
+    type Error = Vec<MainError>;
+
+    fn try_from(input: super::v01::Main) -> Result<Self, Self::Error> {
+        info!("Making main file HIR");
+        let mut errors = Vec::new();
+
+        let uses = if input.header.uses.is_empty() {
+            Default::default()
+        } else {
+            let at_least = input.header.uses.len().max(16);
+            let mut uses = Vec::with_capacity(at_least);
+            for usage in input.header.uses {
+                match syn::parse_str(&usage) {
+                    Ok(u) => uses.push(u),
+                    Err(err) => errors.push(MainError::UseParse(err)),
+                }
+            }
+            debug!("Parsed {} use clauses", uses.len());
+            uses.shrink_to_fit();
+            uses
+        };
+
+        if !input.name.is_valid_ident() {
+            errors.push(MainError::InvalidName(input.name.clone()));
+        }
+
+        let explain = input.explain.unwrap_or_default();
+
+        let idents = {
+            let bindings = &input.bindings.bindings;
+            let mut idents = Vec::with_capacity(bindings.len());
+            for (ident, _) in bindings {
+                idents.push(CompactString::from(ident));
+            }
+            debug!("Parsed {} binding idents", idents.len());
+            idents
+        };
+
+        let pipes = {
+            let mut pipes = Vec::with_capacity(input.pipes.len());
+            for pipe in input.pipes {
+                let parsed = match Pipe::try_from(pipe.as_str()) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        errors.push(MainError::PipeParseError(err));
+                        continue;
+                    }
+                };
+                let input = idents
+                    .iter()
+                    .position(|i| i == parsed.input())
+                    .map(|v| v as IdentId);
+                let output = idents
+                    .iter()
+                    .position(|i| i == parsed.output())
+                    .map(|v| v as IdentId);
+
+                let unwrap_or_err = |v: Option<IdentId>| {
+                    v.ok_or_else(|| MainError::BindingNotFound {
+                        pipe: pipe.clone(),
+                        ident: parsed.input().to_string(),
+                    })
+                };
+
+                let input = match unwrap_or_err(input) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        errors.push(e);
+                        continue;
+                    }
+                };
+                let output = match unwrap_or_err(output) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        errors.push(e);
+                        continue;
+                    }
+                };
+
+                trace!("Parsed pipe: {input} -> {output}");
+                pipes.push((input, output));
+            }
+            debug!("Parsed {} pipes", pipes.len());
+            pipes
+        };
+
+        let bindings = {
+            let mut bindings = HashMap::with_capacity(input.bindings.bindings.len());
+            for (ident, binding) in input.bindings.bindings {
+                let ty = syn::parse_str(&binding.ty.0).map_err(MainError::BindingTypeParse);
+                let ty = match ty {
+                    Ok(t) => t,
+                    Err(e) => {
+                        errors.push(e);
+                        continue;
+                    }
+                };
+                let cfg = binding.cfg;
+                let id = idents
+                    .iter()
+                    .position(|i| i == ident)
+                    .map(|v| v as IdentId)
+                    .expect("bindings were generated from this very array earlier");
+                bindings.insert(id, MainBinding { ty, cfg });
+            }
+            debug!("Parsed {} bindings", bindings.len());
+            bindings
+        };
+
+        if errors.is_empty() {
+            Ok(Main {
+                name: input.name,
+                explain,
+                pipes,
+                bindings,
+                idents,
+                uses,
+            })
+        } else {
+            Err(errors)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Pipe<'main> {
     input: &'main str,
@@ -66,6 +210,31 @@ impl<'main> Pipe<'main> {
 
     pub fn output(&self) -> &'main str {
         self.output
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to parse pipe. Expected `input -> output`")]
+pub struct StringToPipeParseError(String);
+
+impl<'a> TryFrom<&'a str> for Pipe<'a> {
+    type Error = StringToPipeParseError;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        info!("Parsing pipe from string `{value}`");
+        let err = || StringToPipeParseError(value.into());
+
+        let mut parts = value.split("->");
+        let input = parts.next().ok_or_else(err)?;
+        let output = parts.next().ok_or_else(err)?;
+        if parts.next().is_some() {
+            Err(err())
+        } else {
+            Ok(Pipe {
+                input: input.trim(),
+                output: output.trim(),
+            })
+        }
     }
 }
 
@@ -178,4 +347,15 @@ pub struct SourceColumn {
     /// Checks that are performed on the column defined in the configuration.
     /// Can be none.
     checks: SmallVec<[Check; 1]>,
+}
+
+trait StringExt {
+    fn is_valid_ident(&self) -> bool;
+}
+
+impl StringExt for str {
+    fn is_valid_ident(&self) -> bool {
+        let ident: Result<syn::Ident, _> = syn::parse_str(self);
+        ident.is_ok()
+    }
 }
