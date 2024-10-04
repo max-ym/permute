@@ -5,6 +5,9 @@ pub mod v01;
 /// it into a form that is easier to work with during compilation.
 pub mod hir;
 
+/// Load project from files.
+pub mod load;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]

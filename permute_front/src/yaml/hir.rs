@@ -6,6 +6,9 @@ use std::fmt::Debug;
 
 type IdentId = u16;
 
+pub type UnnamedSink = Unnamed<Sink>;
+pub type UnnamedSource = Unnamed<Source>;
+
 #[derive(Debug)]
 pub struct Main {
     /// Name of the project. Cannot be empty.
@@ -292,14 +295,14 @@ impl Sink {
 }
 
 impl ToNamed for Sink {
-    fn to_named(this: Unnamed<Self>, name: &str) -> Result<Self, NameError<Self>> {
+    fn to_named(this: Unnamed<Self>, name: String) -> Result<Self, NameError<Self>> {
         if name.is_valid_ident() {
             Ok(Sink {
                 name: CompactString::from(name),
                 ..this.0
             })
         } else {
-            Err(NameError(name.to_string(), this.0))
+            Err(NameError(name, this.0))
         }
     }
 }
@@ -547,7 +550,7 @@ impl Source {
 pub struct Unnamed<T: ToNamed>(T);
 
 impl<T: ToNamed> Unnamed<T> {
-    pub fn to_named(self, name: &str) -> Result<T, NameError<T>> {
+    pub fn to_named(self, name: String) -> Result<T, NameError<T>> {
         T::to_named(self, name)
     }
 }
@@ -557,18 +560,18 @@ impl<T: ToNamed> Unnamed<T> {
 pub struct NameError<T>(String, T);
 
 pub trait ToNamed: Sized + Debug {
-    fn to_named(this: Unnamed<Self>, name: &str) -> Result<Self, NameError<Self>>;
+    fn to_named(this: Unnamed<Self>, name: String) -> Result<Self, NameError<Self>>;
 }
 
 impl ToNamed for Source {
-    fn to_named(this: Unnamed<Source>, name: &str) -> Result<Source, NameError<Source>> {
+    fn to_named(this: Unnamed<Source>, name: String) -> Result<Source, NameError<Source>> {
         if name.is_valid_ident() {
             Ok(Source {
                 name: CompactString::from(name),
                 ..this.0
             })
         } else {
-            Err(NameError(name.to_string(), this.0))
+            Err(NameError(name, this.0))
         }
     }
 }
