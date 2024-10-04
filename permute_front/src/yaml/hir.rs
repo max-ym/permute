@@ -250,6 +250,7 @@ impl MainBinding {
     }
 }
 
+#[derive(Debug)]
 pub struct Sink {
     /// Name of the sink. This is a valid Rust identifier.
     name: CompactString,
@@ -290,6 +291,150 @@ impl Sink {
     }
 }
 
+impl ToNamed for Sink {
+    fn to_named(this: Unnamed<Self>, name: &str) -> Result<Self, NameError<Self>> {
+        if name.is_valid_ident() {
+            Ok(Sink {
+                name: CompactString::from(name),
+                ..this.0
+            })
+        } else {
+            Err(NameError(name.to_string(), this.0))
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SinkError {
+    #[error("Failed to parse use clause. {0}")]
+    Uses(syn::Error),
+
+    #[error("Failed to parse parameter type. {0}")]
+    TypeParse(syn::Error, String),
+
+    #[error("Failed to parse default value. {0}")]
+    DefaultParse(syn::Error, String),
+
+    #[error("Failed to parse check expression. {0}")]
+    CheckParse(syn::Error, String),
+}
+
+impl TryFrom<super::v01::Sink> for Unnamed<Sink> {
+    type Error = Vec<SinkError>;
+
+    fn try_from(input: super::v01::Sink) -> Result<Self, Self::Error> {
+        info!("Making sink file HIR");
+        let mut errors = Vec::new();
+
+        macro_rules! parse_check_expr {
+            ($check:expr) => {{
+                let check: super::v01::CheckExpr = $check;
+                syn::parse_str(&check.expr().0)
+                    .map_err(|e| {
+                        errors.push(SinkError::CheckParse(e, check.expr().0.to_owned()));
+                    })
+                    .ok() // because we already pushed the error
+                    .map(|define| Check {
+                        explain: check.explain().unwrap_or_default().to_owned(),
+                        define,
+                    })
+            }};
+        }
+        macro_rules! parse_check {
+            ($check:expr) => {{
+                use super::v01::Check::*;
+                let check: super::v01::Check = $check;
+                trace!("Parsing check: {check:#?}");
+                match check {
+                    Inline(check) => {
+                        if let Some(c) = parse_check_expr!(check) {
+                            vec![c]
+                        } else {
+                            Default::default()
+                        }
+                    }
+                    List(list) => {
+                        let mut acc = Vec::with_capacity(list.len());
+                        for check in list {
+                            if let Some(c) = parse_check_expr!(check) {
+                                acc.push(c);
+                            }
+                        }
+                        acc
+                    }
+                }
+            }};
+        }
+
+        let uses = parse_uses(input.header.uses)
+            .map_err(|e| {
+                errors.extend(e.into_iter().map(SinkError::Uses));
+            })
+            .unwrap_or_default();
+
+        let explain = input.explain.unwrap_or_default();
+
+        let params = {
+            let mut params = Vec::with_capacity(input.param.len());
+            for (name, param) in input.param {
+                let ty = syn::parse_str(&param.ty.0)
+                    .map_err(|e| SinkError::TypeParse(e, param.ty.0.to_owned()));
+                let ty = match ty {
+                    Ok(t) => Some(t),
+                    Err(e) => {
+                        errors.push(e);
+                        None
+                    }
+                };
+                let default = param.default.map(|d| {
+                    syn::parse_str(&d.0).map_err(|e| SinkError::DefaultParse(e, d.0.to_owned()))
+                });
+                let default = match default {
+                    Some(Ok(d)) => Some(d),
+                    Some(Err(e)) => {
+                        errors.push(e);
+                        None
+                    }
+                    None => None,
+                };
+
+                let checks = param.check.map(|v| parse_check!(v)).unwrap_or_default();
+
+                if let Some(ty) = ty {
+                    params.push(SinkParam {
+                        name: CompactString::from(name),
+                        ty,
+                        default,
+                        checks: checks.into(),
+                    });
+                } else {
+                    warn!("Skipping parameter `{name}` due to fatal errors in it");
+                }
+            }
+            debug!("Parsed {} params", params.len());
+            params
+        };
+
+        let additional_checks = input
+            .check
+            .map(|v| parse_check!(v))
+            .unwrap_or_default()
+            .into();
+
+        if errors.is_empty() {
+            Ok(Unnamed(Sink {
+                name: Default::default(),
+                explain,
+                params,
+                additional_checks,
+                uses,
+            }))
+        } else {
+            Err(errors)
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Check {
     /// Explanation for the check. May be empty.
@@ -309,6 +454,7 @@ impl Check {
     }
 }
 
+#[derive(Debug)]
 pub struct SinkParam {
     /// Type of the parameter.
     ty: syn::Type,
@@ -683,7 +829,7 @@ fn parse_uses(input: Vec<String>) -> Result<Vec<syn::UseTree>, Vec<syn::Error>> 
 
 #[cfg(test)]
 mod tests {
-    use super::super::v01::tests::{main, source};
+    use super::super::v01::tests::{main, sink, source};
     use super::*;
 
     #[test]
@@ -697,5 +843,11 @@ mod tests {
     fn test_source() {
         let source = Unnamed::<Source>::try_from(source()).unwrap();
         println!("{source:#?}");
+    }
+
+    #[test]
+    fn test_sink() {
+        let sink = Unnamed::<Sink>::try_from(sink()).unwrap();
+        println!("{sink:#?}");
     }
 }

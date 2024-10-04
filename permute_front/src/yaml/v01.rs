@@ -230,6 +230,11 @@ pub(crate) mod tests {
         serde_yml::from_str(s).unwrap()
     }
 
+    pub fn sink() -> Sink {
+        let s = include_str!("../samples/example1/Csv.yaml");
+        serde_yml::from_str(s).unwrap()
+    }
+
     #[test]
     fn deserialize_main() {
         println!("{:#?}", main());
@@ -242,8 +247,6 @@ pub(crate) mod tests {
 
     #[test]
     fn deserialize_sink() {
-        let s = include_str!("../samples/example1/Csv.yaml");
-        let sink: Sink = serde_yml::from_str(s).unwrap();
-        println!("{sink:#?}");
+        println!("{:#?}", sink());
     }
 }

@@ -39,12 +39,14 @@ param:
         explain: The header row must be defined if it is not None.
   delimiter:
     type: String
-    default: ","
+    default: |
+      ","
     explain: Delimiter to use between fields in the CSV file.
     check: self.len() >= 1
   eol:
     type: String
-    default: '\n'
+    default: |
+      '\n'
     explain: End of line character to use at the end of each row.
     check: self.len() >= 1 
 
