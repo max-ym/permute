@@ -30,7 +30,7 @@ columns:
   employee_id:
     type: String
     check:
-      - self.regex_is_match("^SID\d{6}$")
+      - self.regex_is_match("^SID\\d{6}$")
   hire_date:
     type: NaiveDate
   termination_date:

@@ -132,6 +132,7 @@ pub enum MainBindingField {
 pub struct Source {
     #[serde(rename = "permute")]
     pub header: Header,
+    pub explain: Option<String>,
     pub filters: HashMap<String, SourceFilter>,
     pub columns: HashMap<String, SourceColumn>,
     pub filter_check: Option<Check>,
@@ -171,6 +172,22 @@ pub enum CheckExpr {
     Expr(RustExpr),
 }
 
+impl CheckExpr {
+    pub fn explain(&self) -> Option<&str> {
+        match self {
+            CheckExpr::ExprExpl { explain, .. } => Some(explain),
+            CheckExpr::Expr(_) => None,
+        }
+    }
+
+    pub fn expr(&self) -> &RustExpr {
+        match self {
+            CheckExpr::ExprExpl { define, .. } => define,
+            CheckExpr::Expr(expr) => expr,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct RustExpr(pub String);
@@ -208,6 +225,11 @@ pub(crate) mod tests {
         serde_yml::from_str(s).unwrap()
     }
 
+    pub fn source() -> Source {
+        let s = include_str!("../samples/example1/EmploymentRecord.yaml");
+        serde_yml::from_str(s).unwrap()
+    }
+
     #[test]
     fn deserialize_main() {
         println!("{:#?}", main());
@@ -215,9 +237,7 @@ pub(crate) mod tests {
 
     #[test]
     fn deserialize_empl_rec() {
-        let s = include_str!("../samples/example1/EmploymentRecord.yaml");
-        let source: Source = serde_yml::from_str(s).unwrap();
-        println!("{source:#?}");
+        println!("{:#?}", source());
     }
 
     #[test]

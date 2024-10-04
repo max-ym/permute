@@ -2,6 +2,7 @@ use compact_str::CompactString;
 use hashbrown::HashMap;
 use log::*;
 use smallvec::SmallVec;
+use std::fmt::Debug;
 
 type IdentId = u16;
 
@@ -84,21 +85,11 @@ impl TryFrom<super::v01::Main> for Main {
         info!("Making main file HIR");
         let mut errors = Vec::new();
 
-        let uses = if input.header.uses.is_empty() {
-            Default::default()
-        } else {
-            let at_least = input.header.uses.len().max(16);
-            let mut uses = Vec::with_capacity(at_least);
-            for usage in input.header.uses {
-                match syn::parse_str(&usage) {
-                    Ok(u) => uses.push(u),
-                    Err(err) => errors.push(MainError::UseParse(err)),
-                }
-            }
-            debug!("Parsed {} use clauses", uses.len());
-            uses.shrink_to_fit();
-            uses
-        };
+        let uses = parse_uses(input.header.uses)
+            .map_err(|e| {
+                errors.extend(e.into_iter().map(MainError::UseParse));
+            })
+            .unwrap_or_default();
 
         if !input.name.is_valid_ident() {
             errors.push(MainError::InvalidName(input.name.clone()));
@@ -299,6 +290,7 @@ impl Sink {
     }
 }
 
+#[derive(Debug)]
 pub struct Check {
     /// Explanation for the check. May be empty.
     explain: String,
@@ -350,6 +342,7 @@ impl SinkParam {
     }
 }
 
+#[derive(Debug)]
 pub struct Source {
     /// Name of the source. This is a valid Rust identifier.
     name: CompactString,
@@ -403,6 +396,204 @@ impl Source {
     }
 }
 
+/// Marker struct for a parsed structure for unknown file name.
+#[derive(Debug)]
+pub struct Unnamed<T: ToNamed>(T);
+
+impl<T: ToNamed> Unnamed<T> {
+    pub fn to_named(self, name: &str) -> Result<T, NameError<T>> {
+        T::to_named(self, name)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Name is not a valid identifier. `{0}`")]
+pub struct NameError<T>(String, T);
+
+pub trait ToNamed: Sized + Debug {
+    fn to_named(this: Unnamed<Self>, name: &str) -> Result<Self, NameError<Self>>;
+}
+
+impl ToNamed for Source {
+    fn to_named(this: Unnamed<Source>, name: &str) -> Result<Source, NameError<Source>> {
+        if name.is_valid_ident() {
+            Ok(Source {
+                name: CompactString::from(name),
+                ..this.0
+            })
+        } else {
+            Err(NameError(name.to_string(), this.0))
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SourceError {
+    #[error("Failed to parse type expression. {0}")]
+    TypeParse(syn::Error, String),
+
+    #[error("Failed to parse default value expression. {0}")]
+    DefaultParse(syn::Error, String),
+
+    #[error("Failed to parse check expression. {0}")]
+    CheckParse(syn::Error, String),
+
+    #[error("Failed to parse use clause. {0}")]
+    Uses(syn::Error),
+}
+
+impl TryFrom<super::v01::Source> for Unnamed<Source> {
+    type Error = Vec<SourceError>;
+
+    fn try_from(input: super::v01::Source) -> Result<Self, Self::Error> {
+        info!("Making source file HIR");
+        let mut errors = Vec::new();
+
+        macro_rules! parse_check_expr {
+            ($check:expr) => {{
+                let check: super::v01::CheckExpr = $check;
+                syn::parse_str(&check.expr().0)
+                    .map_err(|e| {
+                        errors.push(SourceError::CheckParse(e, check.expr().0.to_owned()));
+                    })
+                    .ok() // because we already pushed the error
+                    .map(|define| Check {
+                        explain: check.explain().unwrap_or_default().to_owned(),
+                        define,
+                    })
+            }};
+        }
+        macro_rules! parse_check {
+            ($check:expr) => {{
+                use super::v01::Check::*;
+                let check: super::v01::Check = $check;
+                trace!("Parsing check: {check:#?}");
+                match check {
+                    Inline(check) => {
+                        if let Some(c) = parse_check_expr!(check) {
+                            vec![c]
+                        } else {
+                            Default::default()
+                        }
+                    }
+                    List(list) => {
+                        let mut acc = Vec::with_capacity(list.len());
+                        for check in list {
+                            if let Some(c) = parse_check_expr!(check) {
+                                acc.push(c);
+                            }
+                        }
+                        acc
+                    }
+                }
+            }};
+        }
+
+        let filters = {
+            let mut filters = Vec::with_capacity(input.filters.len());
+            for (name, filter) in input.filters {
+                let ty = syn::parse_str(&filter.ty.0)
+                    .map_err(|e| SourceError::TypeParse(e, filter.ty.0.to_owned()));
+                let ty = match ty {
+                    Ok(t) => Some(t),
+                    Err(e) => {
+                        errors.push(e);
+                        None
+                    }
+                };
+                let default = filter.default.map(|d| {
+                    syn::parse_str(&d.0).map_err(|e| SourceError::DefaultParse(e, d.0.to_owned()))
+                });
+                let default = match default {
+                    Some(Ok(d)) => Some(d),
+                    Some(Err(e)) => {
+                        errors.push(e);
+                        None
+                    }
+                    None => None,
+                };
+
+                let checks = filter.check.map(|v| parse_check!(v)).unwrap_or_default();
+
+                if let Some(ty) = ty {
+                    filters.push(SourceFilter {
+                        explain: filter.explain.unwrap_or_default(),
+                        ty,
+                        default,
+                        checks: checks.into(),
+                    });
+                } else {
+                    warn!("Skipping filter `{name}` due to fatal errors in it");
+                }
+            }
+            debug!("Parsed {} filters", filters.len());
+            filters
+        };
+
+        let columns = {
+            let mut columns = Vec::with_capacity(input.columns.len());
+            for (name, column) in input.columns {
+                let ty = syn::parse_str(&column.ty.0)
+                    .map_err(|e| SourceError::TypeParse(e, column.ty.0.to_owned()));
+                let ty = match ty {
+                    Ok(t) => Some(t),
+                    Err(e) => {
+                        errors.push(e);
+                        None
+                    }
+                };
+
+                let checks = column.check.map(|v| parse_check!(v)).unwrap_or_default();
+
+                if let Some(ty) = ty {
+                    columns.push(SourceColumn {
+                        explain: column.explain.unwrap_or_default(),
+                        ty,
+                        checks: checks.into(),
+                    });
+                } else {
+                    warn!("Skipping column `{name}` due to fatal errors in it");
+                }
+            }
+            debug!("Parsed {} columns", columns.len());
+            columns
+        };
+
+        let filter_additional_checks = input
+            .filter_check
+            .map(|v| parse_check!(v))
+            .unwrap_or_default()
+            .into();
+
+        let column_additional_checks = input
+            .column_check
+            .map(|v| parse_check!(v))
+            .unwrap_or_default()
+            .into();
+
+        let uses = parse_uses(input.header.uses)
+            .map_err(|e| {
+                errors.extend(e.into_iter().map(SourceError::Uses));
+            })
+            .unwrap_or_default();
+
+        if errors.is_empty() {
+            Ok(Unnamed(Source {
+                name: Default::default(),
+                explain: input.explain.unwrap_or_default(),
+                filters,
+                columns,
+                filter_additional_checks,
+                column_additional_checks,
+                uses,
+            }))
+        } else {
+            Err(errors)
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct SourceFilter {
     /// Explanation for the filter. May be empty.
     explain: String,
@@ -436,6 +627,7 @@ impl SourceFilter {
     }
 }
 
+#[derive(Debug)]
 pub struct SourceColumn {
     /// Explanation for the column. May be empty.
     explain: String,
@@ -473,15 +665,37 @@ impl StringExt for str {
     }
 }
 
+fn parse_uses(input: Vec<String>) -> Result<Vec<syn::UseTree>, Vec<syn::Error>> {
+    let mut errors = Vec::new();
+    let mut uses = Vec::with_capacity(input.len());
+    for usage in input {
+        match syn::parse_str(&usage) {
+            Ok(u) => uses.push(u),
+            Err(err) => errors.push(err),
+        }
+    }
+    if errors.is_empty() {
+        Ok(uses)
+    } else {
+        Err(errors)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::v01::tests::{main, source};
     use super::*;
-    use super::super::v01::tests::main;
 
     #[test]
     fn test_main() {
         let main = main();
         let main = Main::try_from(main).unwrap();
         println!("{main:#?}");
+    }
+
+    #[test]
+    fn test_source() {
+        let source = Unnamed::<Source>::try_from(source()).unwrap();
+        println!("{source:#?}");
     }
 }
