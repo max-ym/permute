@@ -200,14 +200,17 @@ pub struct SinkColumn {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    pub fn main() -> Main {
+        let s = include_str!("../samples/example1/main.yaml");
+        serde_yml::from_str(s).unwrap()
+    }
 
     #[test]
     fn deserialize_main() {
-        let s = include_str!("../samples/example1/main.yaml");
-        let main: Main = serde_yml::from_str(s).unwrap();
-        println!("{main:#?}");
+        println!("{:#?}", main());
     }
 
     #[test]

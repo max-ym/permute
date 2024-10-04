@@ -5,6 +5,7 @@ use smallvec::SmallVec;
 
 type IdentId = u16;
 
+#[derive(Debug)]
 pub struct Main {
     /// Name of the project. Cannot be empty.
     name: String,
@@ -237,6 +238,7 @@ impl<'a> TryFrom<&'a str> for Pipe<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct MainBinding {
     /// The type that this binding is for.
     ty: syn::Type,
@@ -468,5 +470,18 @@ impl StringExt for str {
     fn is_valid_ident(&self) -> bool {
         let ident: Result<syn::Ident, _> = syn::parse_str(self);
         ident.is_ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::v01::tests::main;
+
+    #[test]
+    fn test_main() {
+        let main = main();
+        let main = Main::try_from(main).unwrap();
+        println!("{main:#?}");
     }
 }

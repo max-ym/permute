@@ -6,7 +6,7 @@ permute:
     # This allows for backwards compatibility and incremental improvements.
   type: main # Declares this file as a main file. This is required.
 
-name: Sample Process Name
+name: SampleProcessName
 pipe: # Pipelines that execute the process. Bindings are defined below in `let` map.
   - er -> feed
 let:
