@@ -52,6 +52,10 @@ impl Main {
     pub fn get_binding(&self, id: IdentId) -> Option<&MainBinding> {
         self.bindings.get(&id)
     }
+
+    pub fn uses(&self) -> impl Iterator<Item = &syn::UseTree> {
+        self.uses.iter()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -252,6 +256,10 @@ impl MainBinding {
     pub fn cfg(&self) -> &super::v01::BindingCfg {
         &self.cfg
     }
+
+    pub fn ty(&self) -> &syn::Type {
+        &self.ty
+    }
 }
 
 pub struct Sink {
@@ -272,17 +280,45 @@ pub struct Sink {
     uses: Vec<syn::UseTree>,
 }
 
+impl Sink {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn explain(&self) -> &str {
+        &self.explain
+    }
+
+    pub fn params(&self) -> impl Iterator<Item = &SinkParam> {
+        self.params.iter()
+    }
+
+    pub fn additional_checks(&self) -> impl Iterator<Item = &Check> {
+        self.additional_checks.iter()
+    }
+
+    pub fn uses(&self) -> impl Iterator<Item = &syn::UseTree> {
+        self.uses.iter()
+    }
+}
+
 pub struct Check {
     /// Explanation for the check. May be empty.
     explain: String,
 
     /// The expression that is used to check the condition.
-    define: RustExpr,
+    define: syn::Expr,
 }
 
-/// Rust expression parsed from the configuration file. At this stage
-/// it is already parsed into AST and is known to be a valid Rust expression.
-pub struct RustExpr(syn::Expr);
+impl Check {
+    pub fn explain(&self) -> &str {
+        &self.explain
+    }
+
+    pub fn define(&self) -> &syn::Expr {
+        &self.define
+    }
+}
 
 pub struct SinkParam {
     /// Type of the parameter.
@@ -296,7 +332,25 @@ pub struct SinkParam {
     checks: SmallVec<[Check; 1]>,
 
     /// Default value for the parameter. This is optional and may be None.
-    default: Option<RustExpr>,
+    default: Option<syn::Expr>,
+}
+
+impl SinkParam {
+    pub fn ty(&self) -> &syn::Type {
+        &self.ty
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn checks(&self) -> impl Iterator<Item = &Check> {
+        self.checks.iter()
+    }
+
+    pub fn default(&self) -> Option<&syn::Expr> {
+        self.default.as_ref()
+    }
 }
 
 pub struct Source {
@@ -322,6 +376,36 @@ pub struct Source {
     uses: Vec<syn::UseTree>,
 }
 
+impl Source {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn explain(&self) -> &str {
+        &self.explain
+    }
+
+    pub fn filters(&self) -> impl Iterator<Item = &SourceFilter> {
+        self.filters.iter()
+    }
+
+    pub fn columns(&self) -> impl Iterator<Item = &SourceColumn> {
+        self.columns.iter()
+    }
+
+    pub fn filter_additional_checks(&self) -> impl Iterator<Item = &Check> {
+        self.filter_additional_checks.iter()
+    }
+
+    pub fn column_additional_checks(&self) -> impl Iterator<Item = &Check> {
+        self.column_additional_checks.iter()
+    }
+
+    pub fn uses(&self) -> impl Iterator<Item = &syn::UseTree> {
+        self.uses.iter()
+    }
+}
+
 pub struct SourceFilter {
     /// Explanation for the filter. May be empty.
     explain: String,
@@ -330,11 +414,29 @@ pub struct SourceFilter {
     ty: syn::Type,
 
     /// Default value for the filter. This is optional and may be None.
-    default: Option<RustExpr>,
+    default: Option<syn::Expr>,
 
     /// Checks that are performed on the filter defined in the configuration.
     /// Can be none.
     checks: SmallVec<[Check; 1]>,
+}
+
+impl SourceFilter {
+    pub fn explain(&self) -> &str {
+        &self.explain
+    }
+
+    pub fn ty(&self) -> &syn::Type {
+        &self.ty
+    }
+
+    pub fn default(&self) -> Option<&syn::Expr> {
+        self.default.as_ref()
+    }
+
+    pub fn checks(&self) -> impl Iterator<Item = &Check> {
+        self.checks.iter()
+    }
 }
 
 pub struct SourceColumn {
@@ -347,6 +449,20 @@ pub struct SourceColumn {
     /// Checks that are performed on the column defined in the configuration.
     /// Can be none.
     checks: SmallVec<[Check; 1]>,
+}
+
+impl SourceColumn {
+    pub fn explain(&self) -> &str {
+        &self.explain
+    }
+
+    pub fn ty(&self) -> &syn::Type {
+        &self.ty
+    }
+
+    pub fn checks(&self) -> impl Iterator<Item = &Check> {
+        self.checks.iter()
+    }
 }
 
 trait StringExt {

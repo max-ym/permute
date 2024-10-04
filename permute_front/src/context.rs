@@ -237,6 +237,14 @@ impl SourceColumn {
     pub fn name(&self) -> &str {
         &self.name
     }
+
+    pub fn ty(&self) -> &syn::Type {
+        &self.ty
+    }
+
+    pub fn checks(&self) -> &[ExplainExpr] {
+        &self.checks
+    }
 }
 
 pub struct ExplainExpr {
