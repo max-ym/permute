@@ -117,38 +117,33 @@ impl TryFrom<super::v01::Main> for Main {
 
         let pipes = {
             let mut pipes = Vec::with_capacity(input.pipes.len());
-            for pipe in input.pipes {
-                let parsed = match Pipe::try_from(pipe.as_str()) {
+            for string in input.pipes {
+                let parsed = match Pipe::try_from(string.as_str()) {
                     Ok(p) => p,
                     Err(err) => {
                         errors.push(MainError::PipeParseError(err));
                         continue;
                     }
                 };
-                let input = idents
-                    .iter()
-                    .position(|i| i == parsed.input())
-                    .map(|v| v as IdentId);
-                let output = idents
-                    .iter()
-                    .position(|i| i == parsed.output())
-                    .map(|v| v as IdentId);
-
-                let unwrap_or_err = |v: Option<IdentId>| {
-                    v.ok_or_else(|| MainError::BindingNotFound {
-                        pipe: pipe.clone(),
-                        ident: parsed.input().to_string(),
-                    })
+                let find_ident = |name: &str| {
+                    idents
+                        .iter()
+                        .position(|i| i.as_str() == name)
+                        .map(|v| v as IdentId)
+                        .ok_or_else(|| MainError::BindingNotFound {
+                            pipe: string.clone(),
+                            ident: name.to_string(),
+                        })
                 };
 
-                let input = match unwrap_or_err(input) {
+                let input = match find_ident(parsed.input()) {
                     Ok(v) => v,
                     Err(e) => {
                         errors.push(e);
                         continue;
                     }
                 };
-                let output = match unwrap_or_err(output) {
+                let output = match find_ident(parsed.output()) {
                     Ok(v) => v,
                     Err(e) => {
                         errors.push(e);
