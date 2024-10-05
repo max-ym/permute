@@ -75,29 +75,24 @@ impl LoadProjectDir<'_> {
             .map_err(|e| errors.extend(e.into_iter().map(Into::into)))
             .ok();
 
-        let sinks = sinks
-            .into_iter()
-            .map(|v| {
-                let s = v.rust_path_string();
-                let (path, v) = v.unwrap();
-                hir::UnnamedSink::try_from(v).map(|v| v.to_named(s))
-            })
-            .filter_map(|sink| {
-                sink.map_err(|e| errors.extend(e.into_iter().map(Into::into)))
-                    .ok()
-            });
+        macro_rules! hir_src_sink {
+            ($src_or_sink:expr, $ty:ident) => {
+                $src_or_sink
+                    .into_iter()
+                    .map(|v| {
+                        let s = v.rust_path_string();
+                        let (_, v) = v.unwrap();
+                        hir::$ty::try_from(v).map(|v| v.to_named(s))
+                    })
+                    .filter_map(|sink| {
+                        sink.map_err(|e| errors.extend(e.into_iter().map(Into::into)))
+                            .ok()
+                    })
+            };
+        }
 
-        let srcs = srcs
-            .into_iter()
-            .map(|v| {
-                let s = v.rust_path_string();
-                let (path, v) = v.unwrap();
-                hir::UnnamedSource::try_from(v).map(|v| v.to_named(s))
-            })
-            .filter_map(|src| {
-                src.map_err(|e| errors.extend(e.into_iter().map(Into::into)))
-                    .ok()
-            });
+        let sinks = hir_src_sink!(sinks, UnnamedSink);
+        let srcs = hir_src_sink!(srcs, UnnamedSource);
 
         if !errors.is_empty() {
             return Err(errors.into_vec());
