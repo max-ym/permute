@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use compact_str::CompactString;
 use log::*;
-use serde_yml::modules::path;
 use smallvec::SmallVec;
 
 use crate::context::Ctx;
@@ -41,6 +40,15 @@ pub enum LoadError {
 
     #[error(transparent)]
     SourceHir(#[from] hir::SourceError),
+
+    #[error(transparent)]
+    EmptyName(#[from] crate::context::EmptyNameError),
+
+    #[error(transparent)]
+    AddSink(#[from] crate::context::AddSinkErr),
+
+    #[error(transparent)]
+    AddSource(#[from] crate::context::AddSourceErr),
 }
 
 /// Error during loading of the main file.
@@ -58,6 +66,7 @@ impl LoadProjectDir<'_> {
 
     pub fn run(self) -> Result<Ctx, Vec<LoadError>> {
         info!("Load project into context");
+        const EXPECT_NO_ERR: &str = "should be present since there are no errors";
 
         let mut errors = SmallVec::<[_; 32]>::new();
         self.validate_path().map_err(vec)?;
@@ -68,9 +77,9 @@ impl LoadProjectDir<'_> {
         if !errors.is_empty() {
             return Err(errors.into_vec());
         }
-        let main = main.expect("should be present since there are no errors");
+        let main = main.expect(EXPECT_NO_ERR);
 
-        // Translate the loaded data into the HIR.
+        info!("Translate main file into HIR");
         let main = hir::Main::try_from(main)
             .map_err(|e| errors.extend(e.into_iter().map(Into::into)))
             .ok();
@@ -91,17 +100,50 @@ impl LoadProjectDir<'_> {
             };
         }
 
-        let sinks = hir_src_sink!(sinks, UnnamedSink);
-        let srcs = hir_src_sink!(srcs, UnnamedSource);
+        info!(
+            "Translate to HIR sinks and sources, also populate error array if there are any found"
+        );
+        let sinks: SmallVec<[_; 32]> = hir_src_sink!(sinks, UnnamedSink).collect();
+        let srcs: SmallVec<[_; 32]> = hir_src_sink!(srcs, UnnamedSource).collect();
 
         if !errors.is_empty() {
             return Err(errors.into_vec());
+        } else {
+            debug!("HIR is ready, no errors by this point");
+        }
+        let main = main.expect(EXPECT_NO_ERR);
+        let sinks = sinks.into_iter().map(|v| v.expect(EXPECT_NO_ERR));
+        let srcs = srcs.into_iter().map(|v| v.expect(EXPECT_NO_ERR));
+
+        info!("Creating new context");
+        let ctx = Ctx::new(main.name().into(), Some(main.explain().into()));
+        let mut ctx = match ctx {
+            Ok(ctx) => ctx,
+            Err(e) => {
+                error!("Error creating context. {e}");
+                errors.push(e.into());
+                return Err(errors.into_vec());
+            }
+        };
+
+        info!("Add sinks to the context");
+        for sink in sinks {
+            if let Err(e) = ctx.add_sink(sink) {
+                errors.push(e.into())
+            }
+        }
+        info!("Add sources to the context");
+        for src in srcs {
+            if let Err(e) = ctx.add_source(src) {
+                errors.push(e.into())
+            }
         }
 
         todo!()
     }
 
     fn validate_path(&self) -> Result<(), LoadError> {
+        debug!("Validate project path");
         if !self.path.exists() {
             return Err(LoadError::PathDoesNotExist(self.path.into()));
         }
@@ -114,7 +156,7 @@ impl LoadProjectDir<'_> {
     }
 
     fn load_main(&self) -> Result<v01::Main, MainLoadError> {
-        info!("Load main file");
+        debug!("Load main file");
         let main_file = self.path.join("main.yaml");
         if !main_file.exists() {
             return Err(MainLoadError::NotFound);
@@ -126,6 +168,8 @@ impl LoadProjectDir<'_> {
 
     /// List all YAML files except for main in the project directory.
     fn list_other_yaml_files(&self) -> std::io::Result<Vec<std::path::PathBuf>> {
+        debug!("List other YAML files");
+
         let mut files = SmallVec::<[_; 32]>::new();
         for entry in std::fs::read_dir(self.path)? {
             let entry = entry?;
@@ -152,6 +196,8 @@ impl LoadProjectDir<'_> {
         SmallVec<[File<v01::Sink>; 32]>,
         SmallVec<[File<v01::Source>; 32]>,
     ) {
+        debug!("Load sinks and sources");
+
         let list = self.list_other_yaml_files().map_err(LoadError::DirList);
         let list = match list {
             Ok(list) => list,

@@ -1,3 +1,5 @@
+use crate::yaml::hir;
+use compact_str::CompactString;
 use hashbrown::HashMap;
 
 type IdentId = usize;
@@ -8,10 +10,10 @@ pub mod codegen;
 /// Context for the project.
 pub struct Ctx {
     /// The name of the project. Cannot be empty.
-    name: String,
+    name: CompactString,
 
     /// User comment about this project. Empty string means no comment.
-    explain: String,
+    explain: CompactString,
 
     /// Data sources.
     srcs: Vec<DataSource>,
@@ -30,7 +32,10 @@ pub struct Ctx {
 pub struct EmptyNameError;
 
 impl Ctx {
-    pub fn new(name: String, explain: Option<String>) -> Result<Self, EmptyNameError> {
+    pub fn new(
+        name: CompactString,
+        explain: Option<CompactString>,
+    ) -> Result<Self, EmptyNameError> {
         if name.is_empty() {
             return Err(EmptyNameError);
         }
@@ -64,20 +69,24 @@ impl Ctx {
         &self.sinks
     }
 
-    pub fn add_source(&mut self, src: DataSource) -> Result<(), AddSourceErr> {
+    pub fn add_source(&mut self, src: impl Into<DataSource>) -> Result<(), AddSourceErr> {
+        let src = src.into();
+
         // Check if the source with the same name already exists.
         if self.srcs.iter().any(|s| s.name() == src.name()) {
-            return Err(AddSourceErr::NameExists(src.name().to_string()));
+            return Err(AddSourceErr::NameExists(src.name().into()));
         }
 
         self.srcs.push(src);
         Ok(())
     }
 
-    pub fn add_sink(&mut self, sink: Sink) -> Result<(), AddSinkErr> {
+    pub fn add_sink(&mut self, sink: impl Into<Sink>) -> Result<(), AddSinkErr> {
+        let sink = sink.into();
+
         // Check if the sink with the same name already exists.
         if self.sinks.iter().any(|s| s.name() == sink.name()) {
-            return Err(AddSinkErr::NameExists(sink.name().to_string()));
+            return Err(AddSinkErr::NameExists(sink.name().into()));
         }
 
         self.sinks.push(sink);
@@ -89,12 +98,12 @@ impl Ctx {
             .srcs
             .iter()
             .position(|s| s.name() == src)
-            .ok_or_else(|| AddPipeErr::SourceNotFound(src.to_string()))?;
+            .ok_or_else(|| AddPipeErr::SourceNotFound(src.into()))?;
         let sink_idx = self
             .sinks
             .iter()
             .position(|s| s.name() == sink)
-            .ok_or_else(|| AddPipeErr::SinkNotFound(sink.to_string()))?;
+            .ok_or_else(|| AddPipeErr::SinkNotFound(sink.into()))?;
 
         self.pipes.push((src_idx, sink_idx));
         Ok(())
@@ -108,48 +117,51 @@ impl Ctx {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum AddSourceErr {
-    NameExists(String),
+    #[error("Source with the name {0} already exists")]
+    NameExists(CompactString),
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum AddSinkErr {
-    NameExists(String),
+    #[error("Sink with the name {0} already exists")]
+    NameExists(CompactString),
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum AddPipeErr {
-    SourceNotFound(String),
-    SinkNotFound(String),
+    #[error("Source with the name {0} not found")]
+    SourceNotFound(CompactString),
+
+    #[error("Sink with the name {0} not found")]
+    SinkNotFound(CompactString),
 }
 
 pub struct DataSource {
-    /// The name based on the source file. Cannot be empty.
-    /// This is later the name of the struct in the generated code.
-    src_name: String,
-
-    /// Name of the source. Cannot be empty.
-    name: String,
+    /// Identifier name for this data source. Cannot be empty. Is valid Rust identifier.
+    name: CompactString,
 
     /// User comment about this source. Empty string means no comment.
-    explain: String,
+    explain: CompactString,
 
     /// Applicable filters on the source query.
-    filters: HashMap<String, FilterTy>,
+    filters: HashMap<CompactString, FilterTy>,
 
     /// Data columns in the source.
     columns: Vec<SourceColumn>,
 
-    /// Global checks that can operate on multiple columns.
-    checks: Vec<ExplainExpr>,
+    /// Global checks that can operate on multiple filters.
+    /// These are performed during compilation on statically assigned filters.
+    filter_checks: Vec<ExplainExpr>,
+
+    /// Global checks that can operate on multiple data columns.
+    /// These are performed during runtime on the source data to ensure data integrity
+    /// and conformity to the schema.
+    column_checks: Vec<ExplainExpr>,
 }
 
 impl DataSource {
-    pub fn src_name(&self) -> &str {
-        &self.src_name
-    }
-
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -162,7 +174,7 @@ impl DataSource {
         }
     }
 
-    pub fn filters(&self) -> &HashMap<String, FilterTy> {
+    pub fn filters(&self) -> &HashMap<CompactString, FilterTy> {
         &self.filters
     }
 
@@ -170,8 +182,37 @@ impl DataSource {
         &self.columns
     }
 
-    pub fn checks(&self) -> &[ExplainExpr] {
-        &self.checks
+    pub fn filter_checks(&self) -> &[ExplainExpr] {
+        &self.filter_checks
+    }
+
+    pub fn column_checks(&self) -> &[ExplainExpr] {
+        &self.column_checks
+    }
+}
+
+impl From<hir::Source> for DataSource {
+    fn from(src: hir::Source) -> Self {
+        Self {
+            name: src.name,
+            explain: src.explain,
+            filters: src
+                .filters
+                .into_iter()
+                .map(|filter| (filter.name.clone(), FilterTy::from(filter)))
+                .collect(),
+            columns: src.columns.into_iter().map(SourceColumn::from).collect(),
+            filter_checks: src
+                .filter_additional_checks
+                .into_iter()
+                .map(ExplainExpr::from)
+                .collect(),
+            column_checks: src
+                .column_additional_checks
+                .into_iter()
+                .map(ExplainExpr::from)
+                .collect(),
+        }
     }
 }
 
@@ -180,7 +221,7 @@ pub struct FilterTy {
     default: Option<syn::Expr>,
 
     /// User comment about this filter. Empty string means no comment.
-    explain: String,
+    explain: CompactString,
 
     /// Data type of the filter field.
     ty: syn::Type,
@@ -211,12 +252,23 @@ impl FilterTy {
     }
 }
 
+impl From<hir::SourceFilter> for FilterTy {
+    fn from(filter: hir::SourceFilter) -> Self {
+        Self {
+            default: filter.default,
+            explain: filter.explain,
+            ty: filter.ty,
+            checks: filter.checks.into_iter().map(ExplainExpr::from).collect(),
+        }
+    }
+}
+
 pub struct SourceColumn {
     /// Name of the column. Cannot be empty.
-    name: String,
+    name: CompactString,
 
     /// Optional explanation for the column. Empty string means no explanation.
-    explain: String,
+    explain: CompactString,
 
     /// Type of the column.
     ty: syn::Type,
@@ -247,6 +299,17 @@ impl SourceColumn {
     }
 }
 
+impl From<hir::SourceColumn> for SourceColumn {
+    fn from(col: hir::SourceColumn) -> Self {
+        Self {
+            name: col.name,
+            explain: col.explain,
+            ty: col.ty,
+            checks: col.checks.into_iter().map(ExplainExpr::from).collect(),
+        }
+    }
+}
+
 pub struct ExplainExpr {
     /// Optional explanation for the expression. Empty string means no explanation.
     explain: String,
@@ -267,16 +330,25 @@ impl ExplainExpr {
     }
 }
 
+impl From<hir::Check> for ExplainExpr {
+    fn from(check: hir::Check) -> Self {
+        Self {
+            explain: check.explain,
+            expr: check.define,
+        }
+    }
+}
+
 /// Data sink.
 pub struct Sink {
     /// Name of the sink. Cannot be empty.
-    name: String,
+    name: CompactString,
 
     /// User comment about this sink. Empty string means no comment.
-    explain: String,
+    explain: CompactString,
 
     /// Parameters that are passed to the sink.
-    params: HashMap<String, SinkParam>,
+    params: HashMap<CompactString, SinkParam>,
 
     /// Global checks that are applied to the sink,
     /// and can operate on multiple parameters.
@@ -288,7 +360,7 @@ impl Sink {
         &self.name
     }
 
-    pub fn params(&self) -> &HashMap<String, SinkParam> {
+    pub fn params(&self) -> &HashMap<CompactString, SinkParam> {
         &self.params
     }
 
@@ -305,6 +377,25 @@ impl Sink {
     }
 }
 
+impl From<hir::Sink> for Sink {
+    fn from(sink: hir::Sink) -> Self {
+        Self {
+            name: sink.name,
+            explain: sink.explain,
+            params: sink
+                .params
+                .into_iter()
+                .map(|param| (param.name.clone(), SinkParam::from(param)))
+                .collect(),
+            checks: sink
+                .additional_checks
+                .into_iter()
+                .map(ExplainExpr::from)
+                .collect(),
+        }
+    }
+}
+
 /// Sink parameter.
 pub struct SinkParam {
     /// Default value for the parameter, to use when it is not explicitly set.
@@ -317,7 +408,20 @@ pub struct SinkParam {
     checks: Vec<ExplainExpr>,
 
     /// User comment about this sink. Empty string means no comment.
-    explain: String,
+    explain: CompactString,
+}
+
+impl From<hir::SinkParam> for SinkParam {
+    fn from(param: hir::SinkParam) -> Self {
+        let checks = param.checks.into_iter().map(ExplainExpr::from).collect();
+
+        Self {
+            default: param.default,
+            ty: param.ty,
+            checks,
+            explain: param.explain,
+        }
+    }
 }
 
 impl SinkParam {
@@ -344,17 +448,17 @@ impl SinkParam {
 
 /// Track data from source column to all sinks.
 pub struct TrackColumn {
-    pub src: String,
-    pub col: String,
+    pub src: CompactString,
+    pub col: CompactString,
 }
 
 /// Track data from sink field to all source columns.
 pub struct TrackField {
-    pub sink: String,
-    pub field: String,
+    pub sink: CompactString,
+    pub field: CompactString,
 }
 
 /// Track data used in this function to all other functions, and source, and sink fields.
 pub struct TrackFn {
-    pub fn_path: Vec<String>,
+    pub fn_path: Vec<CompactString>,
 }

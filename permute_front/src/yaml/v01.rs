@@ -1,16 +1,17 @@
+use compact_str::CompactString;
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Header {
-    pub version: String,
+    pub version: CompactString,
     #[serde(rename = "type")]
     pub ty: FileKind,
 
     #[serde(default)]
     #[serde(rename = "use")]
-    pub uses: Vec<String>,
+    pub uses: Vec<CompactString>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -28,11 +29,11 @@ pub struct Main {
     /// Project name.
     #[serde(rename = "permute")]
     pub header: Header,
-    pub name: String,
-    pub explain: Option<String>,
+    pub name: CompactString,
+    pub explain: Option<CompactString>,
 
     #[serde(rename = "pipe")]
-    pub pipes: Vec<String>,
+    pub pipes: Vec<CompactString>,
 
     #[serde(rename = "let")]
     pub bindings: MainBindings,
@@ -50,7 +51,7 @@ impl Main {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct MainBindings {
-    pub bindings: HashMap<String, MainBinding>,
+    pub bindings: HashMap<CompactString, MainBinding>,
 }
 
 #[derive(Debug)]
@@ -63,8 +64,8 @@ pub struct MainBinding {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum BindingCfg {
-    Inline(String),
-    Map(HashMap<String, MainBindingField>),
+    Inline(CompactString),
+    Map(HashMap<CompactString, MainBindingField>),
 }
 
 impl<'de> Deserialize<'de> for MainBinding {
@@ -79,7 +80,7 @@ impl<'de> Deserialize<'de> for MainBinding {
             Second(U),
         }
 
-        let actual: HashMap<String, Either<String, HashMap<String, MainBindingField>>> =
+        let actual: HashMap<CompactString, Either<CompactString, HashMap<CompactString, MainBindingField>>> =
             Deserialize::deserialize(deserializer)?;
 
         if actual.len() != 1 {
@@ -118,13 +119,13 @@ impl Serialize for MainBinding {
 #[serde(untagged)]
 pub enum MainBindingField {
     /// A field that is a simple value.
-    Value(String),
+    Value(CompactString),
 
     /// A field that is a list of values.
-    List(Vec<String>),
+    List(Vec<CompactString>),
 
     /// A field that is a map of other fields.
-    Map(HashMap<String, MainBindingField>),
+    Map(HashMap<CompactString, MainBindingField>),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -132,9 +133,9 @@ pub enum MainBindingField {
 pub struct Source {
     #[serde(rename = "permute")]
     pub header: Header,
-    pub explain: Option<String>,
-    pub filters: HashMap<String, SourceFilter>,
-    pub columns: HashMap<String, SourceColumn>,
+    pub explain: Option<CompactString>,
+    pub filters: HashMap<CompactString, SourceFilter>,
+    pub columns: HashMap<CompactString, SourceColumn>,
     pub filter_check: Option<Check>,
     pub column_check: Option<Check>,
 }
@@ -142,7 +143,7 @@ pub struct Source {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceFilter {
-    pub explain: Option<String>,
+    pub explain: Option<CompactString>,
     #[serde(rename = "type")]
     pub ty: RustTy,
     pub default: Option<RustExpr>,
@@ -152,7 +153,7 @@ pub struct SourceFilter {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceColumn {
-    pub explain: Option<String>,
+    pub explain: Option<CompactString>,
     #[serde(rename = "type")]
     pub ty: RustTy,
     pub check: Option<Check>,
@@ -168,7 +169,7 @@ pub enum Check {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum CheckExpr {
-    ExprExpl { explain: String, define: RustExpr },
+    ExprExpl { explain: CompactString, define: RustExpr },
     Expr(RustExpr),
 }
 
@@ -190,19 +191,19 @@ impl CheckExpr {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(transparent)]
-pub struct RustExpr(pub String);
+pub struct RustExpr(pub CompactString);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(transparent)]
-pub struct RustTy(pub String);
+pub struct RustTy(pub CompactString);
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Sink {
     #[serde(rename = "permute")]
     pub header: Header,
-    pub explain: Option<String>,
-    pub param: HashMap<String, SinkColumn>,
+    pub explain: Option<CompactString>,
+    pub param: HashMap<CompactString, SinkColumn>,
     pub check: Option<Check>,
 }
 
@@ -211,7 +212,7 @@ pub struct Sink {
 pub struct SinkColumn {
     #[serde(rename = "type")]
     pub ty: RustTy,
-    pub explain: Option<String>,
+    pub explain: Option<CompactString>,
     pub check: Option<Check>,
     pub default: Option<RustExpr>,
 }

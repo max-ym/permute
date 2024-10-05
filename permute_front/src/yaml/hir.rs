@@ -12,10 +12,10 @@ pub type UnnamedSource = Unnamed<Source>;
 #[derive(Debug)]
 pub struct Main {
     /// Name of the project. Cannot be empty.
-    name: String,
+    name: CompactString,
 
     /// Optional explanation for the project. Empty string means no explanation.
-    explain: String,
+    explain: CompactString,
 
     /// List of pipes in the project. This holds identifiers of the input and output
     /// of each pipe.
@@ -69,13 +69,16 @@ pub enum MainError {
     UseParse(syn::Error),
 
     #[error("Invalid project name. `{0}`")]
-    InvalidName(String),
+    InvalidName(CompactString),
 
     #[error(transparent)]
     PipeParseError(#[from] StringToPipeParseError),
 
     #[error("Binding `{ident}` not found for pipe `{pipe}`")]
-    BindingNotFound { pipe: String, ident: String },
+    BindingNotFound {
+        pipe: CompactString,
+        ident: CompactString,
+    },
 
     #[error("Failed to parse binding type. {0}")]
     BindingTypeParse(syn::Error),
@@ -104,7 +107,7 @@ impl TryFrom<super::v01::Main> for Main {
             let bindings = &input.bindings.bindings;
             let mut idents = Vec::with_capacity(bindings.len());
             for (ident, _) in bindings {
-                idents.push(CompactString::from(ident));
+                idents.push(ident.to_owned());
             }
             debug!("Parsed {} binding idents", idents.len());
             idents
@@ -127,7 +130,7 @@ impl TryFrom<super::v01::Main> for Main {
                         .map(|v| v as IdentId)
                         .ok_or_else(|| MainError::BindingNotFound {
                             pipe: string.clone(),
-                            ident: name.to_string(),
+                            ident: name.into(),
                         })
                 };
 
@@ -256,20 +259,20 @@ impl MainBinding {
 #[derive(Debug)]
 pub struct Sink {
     /// Name of the sink. This is a valid Rust identifier.
-    name: CompactString,
+    pub(crate) name: CompactString,
 
     /// Explanation for the sink. May be empty.
-    explain: String,
+    pub(crate) explain: CompactString,
 
     /// Parameters that are passed to the sink.
-    params: Vec<SinkParam>,
+    pub(crate) params: Vec<SinkParam>,
 
     /// Checks that are performed on the sink defined in the configuration,
     /// outside parameters, hence applicable to configuration of a sink as a whole.
-    additional_checks: Vec<Check>,
+    pub(crate) additional_checks: Vec<Check>,
 
     /// List of types that are imported from other modules. This is done via "use" clause.
-    uses: Vec<syn::UseTree>,
+    pub(crate) uses: Vec<syn::UseTree>,
 }
 
 impl Sink {
@@ -313,13 +316,13 @@ pub enum SinkError {
     Uses(syn::Error),
 
     #[error("Failed to parse parameter type. {0}")]
-    TypeParse(syn::Error, String),
+    TypeParse(syn::Error, CompactString),
 
     #[error("Failed to parse default value. {0}")]
-    DefaultParse(syn::Error, String),
+    DefaultParse(syn::Error, CompactString),
 
     #[error("Failed to parse check expression. {0}")]
-    CheckParse(syn::Error, String),
+    CheckParse(syn::Error, CompactString),
 }
 
 impl TryFrom<super::v01::Sink> for Unnamed<Sink> {
@@ -406,6 +409,7 @@ impl TryFrom<super::v01::Sink> for Unnamed<Sink> {
                 if let Some(ty) = ty {
                     params.push(SinkParam {
                         name: CompactString::from(name),
+                        explain: param.explain.unwrap_or_default(),
                         ty,
                         default,
                         checks: checks.into(),
@@ -441,10 +445,10 @@ impl TryFrom<super::v01::Sink> for Unnamed<Sink> {
 #[derive(Debug)]
 pub struct Check {
     /// Explanation for the check. May be empty.
-    explain: String,
+    pub(crate) explain: String,
 
     /// The expression that is used to check the condition.
-    define: syn::Expr,
+    pub(crate) define: syn::Expr,
 }
 
 impl Check {
@@ -460,17 +464,20 @@ impl Check {
 #[derive(Debug)]
 pub struct SinkParam {
     /// Type of the parameter.
-    ty: syn::Type,
+    pub(crate) ty: syn::Type,
 
     /// Name of the parameter. This is a valid Rust identifier.
-    name: CompactString,
+    pub(crate) name: CompactString,
+
+    /// Explanation for the parameter. May be empty.
+    pub(crate) explain: CompactString,
 
     /// Checks that are performed on the parameter defined in the configuration.
     /// Can be none.
-    checks: SmallVec<[Check; 1]>,
+    pub(crate) checks: SmallVec<[Check; 1]>,
 
     /// Default value for the parameter. This is optional and may be None.
-    default: Option<syn::Expr>,
+    pub(crate) default: Option<syn::Expr>,
 }
 
 impl SinkParam {
@@ -480,6 +487,10 @@ impl SinkParam {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn explain(&self) -> &str {
+        &self.explain
     }
 
     pub fn checks(&self) -> impl Iterator<Item = &Check> {
@@ -494,25 +505,25 @@ impl SinkParam {
 #[derive(Debug)]
 pub struct Source {
     /// Name of the source. This is a valid Rust identifier.
-    name: CompactString,
+    pub(crate) name: CompactString,
 
     /// Explanation for the source. May be empty.
-    explain: String,
+    pub(crate) explain: CompactString,
 
-    filters: Vec<SourceFilter>,
+    pub(crate) filters: Vec<SourceFilter>,
 
-    columns: Vec<SourceColumn>,
+    pub(crate) columns: Vec<SourceColumn>,
 
     /// Checks that are performed on the source defined in the configuration,
     /// outside parameters, hence applicable to configuration of a source as a whole.
-    filter_additional_checks: Vec<Check>,
+    pub(crate) filter_additional_checks: Vec<Check>,
 
     /// Checks that are performed on the source data columns,
     /// to verify correctness of the data in general, with relation to one or several columns.
-    column_additional_checks: Vec<Check>,
+    pub(crate) column_additional_checks: Vec<Check>,
 
     /// List of types that are imported from other modules. This is done via "use" clause.
-    uses: Vec<syn::UseTree>,
+    pub(crate) uses: Vec<syn::UseTree>,
 }
 
 impl Source {
@@ -579,13 +590,13 @@ impl ToNamed for Source {
 #[derive(Debug, thiserror::Error)]
 pub enum SourceError {
     #[error("Failed to parse type expression. {0}")]
-    TypeParse(syn::Error, String),
+    TypeParse(syn::Error, CompactString),
 
     #[error("Failed to parse default value expression. {0}")]
-    DefaultParse(syn::Error, String),
+    DefaultParse(syn::Error, CompactString),
 
     #[error("Failed to parse check expression. {0}")]
-    CheckParse(syn::Error, String),
+    CheckParse(syn::Error, CompactString),
 
     #[error("Failed to parse use clause. {0}")]
     Uses(syn::Error),
@@ -666,6 +677,7 @@ impl TryFrom<super::v01::Source> for Unnamed<Source> {
 
                 if let Some(ty) = ty {
                     filters.push(SourceFilter {
+                        name,
                         explain: filter.explain.unwrap_or_default(),
                         ty,
                         default,
@@ -696,6 +708,7 @@ impl TryFrom<super::v01::Source> for Unnamed<Source> {
 
                 if let Some(ty) = ty {
                     columns.push(SourceColumn {
+                        name,
                         explain: column.explain.unwrap_or_default(),
                         ty,
                         checks: checks.into(),
@@ -744,21 +757,28 @@ impl TryFrom<super::v01::Source> for Unnamed<Source> {
 
 #[derive(Debug)]
 pub struct SourceFilter {
+    /// Name of the filter. This is a valid Rust identifier.
+    pub(crate) name: CompactString,
+
     /// Explanation for the filter. May be empty.
-    explain: String,
+    pub(crate) explain: CompactString,
 
     /// Type of the filter.
-    ty: syn::Type,
+    pub(crate) ty: syn::Type,
 
     /// Default value for the filter. This is optional and may be None.
-    default: Option<syn::Expr>,
+    pub(crate) default: Option<syn::Expr>,
 
     /// Checks that are performed on the filter defined in the configuration.
     /// Can be none.
-    checks: SmallVec<[Check; 1]>,
+    pub(crate) checks: SmallVec<[Check; 1]>,
 }
 
 impl SourceFilter {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn explain(&self) -> &str {
         &self.explain
     }
@@ -778,18 +798,25 @@ impl SourceFilter {
 
 #[derive(Debug)]
 pub struct SourceColumn {
+    /// Name of the column. This is a valid Rust identifier.
+    pub(crate) name: CompactString,
+
     /// Explanation for the column. May be empty.
-    explain: String,
+    pub(crate) explain: CompactString,
 
     /// Type of the column.
-    ty: syn::Type,
+    pub(crate) ty: syn::Type,
 
     /// Checks that are performed on the column defined in the configuration.
     /// Can be none.
-    checks: SmallVec<[Check; 1]>,
+    pub(crate) checks: SmallVec<[Check; 1]>,
 }
 
 impl SourceColumn {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn explain(&self) -> &str {
         &self.explain
     }
@@ -814,7 +841,7 @@ impl StringExt for str {
     }
 }
 
-fn parse_uses(input: Vec<String>) -> Result<Vec<syn::UseTree>, Vec<syn::Error>> {
+fn parse_uses(input: Vec<CompactString>) -> Result<Vec<syn::UseTree>, Vec<syn::Error>> {
     let mut errors = Vec::new();
     let mut uses = Vec::with_capacity(input.len());
     for usage in input {
