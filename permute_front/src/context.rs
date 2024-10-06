@@ -1,6 +1,7 @@
 use crate::yaml::hir;
 use compact_str::CompactString;
 use hashbrown::HashMap;
+use log::*;
 
 type IdentId = usize;
 
@@ -87,11 +88,17 @@ impl Ctx {
     }
 
     fn sink_id(&self, sink: &str) -> Option<IdentId> {
-        self.sinks.iter().position(|s| s.name() == sink)
+        self.sinks.iter().position(|s| s.name() == sink).map(|v| {
+            trace!("Found sink with name `{sink}` at index {v}");
+            v
+        })
     }
 
     fn source_id(&self, src: &str) -> Option<IdentId> {
-        self.srcs.iter().position(|s| s.name() == src)
+        self.srcs.iter().position(|s| s.name() == src).map(|v| {
+            trace!("Found source with name `{src}` at index {v}");
+            v
+        })
     }
 
     pub fn add_source(&mut self, src: impl Into<DataSource>) -> Result<(), AddSourceErr> {
@@ -102,6 +109,7 @@ impl Ctx {
             return Err(AddSourceErr::NameExists(src.name().into()));
         }
 
+        debug!("Add source `{}` to the context", src.name());
         self.srcs.push(src);
         Ok(())
     }
@@ -114,6 +122,7 @@ impl Ctx {
             return Err(AddSinkErr::NameExists(sink.name().into()));
         }
 
+        debug!("Add sink `{}` to the context", sink.name());
         self.sinks.push(sink);
         Ok(())
     }
@@ -126,6 +135,7 @@ impl Ctx {
             .sink_id(sink)
             .ok_or_else(|| AddPipeErr::SinkNotFound(sink.into()))?;
 
+        debug!("Add pipe from `{src}` to `{sink}`");
         self.pipes.push((src_idx, sink_idx));
         Ok(())
     }
@@ -147,6 +157,8 @@ impl Ctx {
         let sink_idx = self
             .sink_id(sink_name)
             .ok_or_else(|| AddParamErr::DestNotFound(sink_name.into()))?;
+
+        debug!("Add parameter `{param_name}` to sink `{sink_name}`");
 
         // Check if exists, and if not - add new value.
         let entry = self.sink_params.entry((sink_idx, param_name.into()));
