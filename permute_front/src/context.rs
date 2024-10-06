@@ -2,6 +2,7 @@ use crate::yaml::hir;
 use compact_str::CompactString;
 use hashbrown::HashMap;
 use log::*;
+use smallvec::SmallVec;
 
 type IdentId = usize;
 
@@ -192,6 +193,19 @@ impl Ctx {
                 e.insert(value);
                 Ok(())
             }
+        }
+    }
+
+    pub fn add_param(
+        &mut self,
+        sink_or_src_name: &str,
+        param: &str,
+        value: syn::Expr,
+    ) -> Result<(), AddParamErr> {
+        if self.sink_id(sink_or_src_name).is_some() {
+            self.add_sink_param(sink_or_src_name, param, value)
+        } else {
+            self.add_src_filter(sink_or_src_name, param, value)
         }
     }
 }
@@ -522,6 +536,31 @@ impl SinkParam {
 
     pub fn checks(&self) -> &[ExplainExpr] {
         &self.checks
+    }
+}
+
+/// Parameter path. Is a key of:
+/// - zero elements - unnamed and only parameter.
+/// - one element - named parameter.
+/// - several elements - named parameter in a nested structure.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ParamKey(SmallVec<[CompactString; 8]>);
+
+impl ParamKey {
+    pub fn new() -> Self {
+        Self(SmallVec::new())
+    }
+
+    pub fn push(&mut self, part: CompactString) {
+        self.0.push(part);
+    }
+
+    pub fn pop(&mut self) -> Option<CompactString> {
+        self.0.pop()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &str> {
+        self.0.iter().map(|s| s.as_str())
     }
 }
 

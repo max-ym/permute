@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use compact_str::CompactString;
 use log::*;
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 
-use crate::context::Ctx;
+use crate::context::{Ctx, ParamKey};
 use crate::yaml::hir;
 use crate::yaml::v01;
 
@@ -140,9 +140,11 @@ impl LoadProjectDir<'_> {
         }
 
         info!("Fill in the bindings from the main file");
-        for (name, value) in main.bindings() {
-            if let Err(e) = ctx.add_binding(name.into(), value.into()) {
-                errors.push(e.into())
+        for (name, cfg) in main.bindings() {
+            let ty = cfg.ty();
+            let mut cfg_iter = BindingCfgIter::new(cfg.cfg());
+            for (key, value) in cfg_iter {
+                todo!()
             }
         }
 
@@ -318,6 +320,134 @@ trait PathBufExt {
 impl PathBufExt for PathBuf {
     fn wrap<T>(self, t: T) -> File<T> {
         File { path: self, t }
+    }
+}
+
+type BindingCfgInnerIter<'a> = hashbrown::hash_map::Iter<'a, CompactString, v01::MainBindingField>;
+
+/// Traverse [v01::BindingCfg] tree, providing iterator to [ParamKey] and associated
+/// [CompactString] value.
+struct BindingCfgIter<'a> {
+    /// Current prefix of the key.
+    prefix: ParamKey,
+
+    /// Stack of the positions in the map.
+    iter_stack: SmallVec<[BindingCfgInnerIter<'a>; 8]>,
+
+    /// Iterator over the list of values. If the current value is a list, this iterator
+    /// is used to traverse it.
+    list_iter: Option<std::slice::Iter<'a, CompactString>>,
+
+    /// Set as Some when this iterator was created on a single Inline value in the config.
+    /// It is turned to None when this element is returned.
+    inline: Option<&'a CompactString>,
+}
+
+impl<'a> BindingCfgIter<'a> {
+    pub fn new(cfg: &'a v01::BindingCfg) -> Self {
+        use v01::BindingCfg::*;
+        match cfg {
+            Inline(v) => Self {
+                prefix: Default::default(),
+                iter_stack: Default::default(),
+                list_iter: None,
+                inline: Some(v),
+            },
+            Map(map) => Self {
+                prefix: Default::default(),
+                iter_stack: smallvec![map.iter()],
+                list_iter: None,
+                inline: None,
+            },
+        }
+    }
+
+    /// Pop the stack and return the prefix part that was used for the last key.
+    /// If the stack is empty, return None.
+    /// If the first value in the traversed map is
+    /// (Inline)[v01::BindingCfg::Inline], return the empty prefix, to indicate
+    /// anonymous key.
+    fn pop_stack(&mut self) -> Option<CompactString> {
+        if self.iter_stack.pop().is_some() {
+            if let Some(prefix) = self.prefix.pop() {
+                Some(prefix)
+            } else {
+                assert!(
+                    self.iter_stack.is_empty(),
+                    "we assume this is a map with single Inline, so stack should be empty after the pop"
+                );
+                Some(Default::default())
+            }
+        } else {
+            None
+        }
+    }
+
+    fn push_stack(&mut self, iter: BindingCfgInnerIter<'a>, prefix: CompactString) {
+        self.iter_stack.push(iter);
+        self.prefix.push(prefix);
+    }
+}
+
+impl<'a> Iterator for BindingCfgIter<'a> {
+    type Item = (ParamKey, &'a CompactString);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(inline) = self.inline.take() {
+            trace!("Returning single inline value `{inline}`, terminating the iterator");
+            return Some((self.prefix.clone(), inline));
+        } else if let Some(list_iter) = self.list_iter.as_mut() {
+            if let Some(value) = list_iter.next() {
+                trace!("Returning list value `{value}`");
+                return Some((self.prefix.clone(), value));
+            } else {
+                trace!(
+                    "List is exhausted, terminating the list iterator and continuing with the map"
+                );
+                self.list_iter = None;
+            }
+        } else {
+            trace!("Map iteration");
+        }
+
+        loop {
+            if let Some(head_iter) = self.iter_stack.last_mut() {
+                if let Some((key, value)) = head_iter.next() {
+                    use v01::MainBindingField::*;
+                    match value {
+                        Value(value) => {
+                            trace!("Found value `{value}`");
+                            let mut prefix = self.prefix.clone();
+                            prefix.push(key.clone());
+                            return Some((prefix, value));
+                        }
+                        List(list) => {
+                            trace!("Found list");
+                            let mut prefix = self.prefix.clone();
+                            prefix.push(key.clone());
+                            let mut list_iter = list.iter();
+                            let next_value = list_iter.next();
+                            self.list_iter = Some(list_iter);
+                            return next_value.map(|v| {
+                                trace!("Returning `{v}` from new list");
+                                (prefix, v)
+                            });
+                        }
+                        Map(map) => {
+                            trace!("Found map, pushing it to the stack");
+                            self.push_stack(map.iter(), key.clone());
+                            continue;
+                        }
+                    }
+                } else {
+                    trace!("Map is exhausted, popping the stack");
+                    self.pop_stack();
+                }
+            } else {
+                trace!("Stack is empty, iterator is exhausted");
+                return None;
+            }
+        }
     }
 }
 
