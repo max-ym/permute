@@ -139,6 +139,13 @@ impl LoadProjectDir<'_> {
             }
         }
 
+        info!("Fill in the bindings from the main file");
+        for (name, value) in main.bindings() {
+            if let Err(e) = ctx.add_binding(name.into(), value.into()) {
+                errors.push(e.into())
+            }
+        }
+
         todo!()
     }
 

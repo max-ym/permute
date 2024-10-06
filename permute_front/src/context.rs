@@ -21,6 +21,12 @@ pub struct Ctx {
     /// Data sinks.
     sinks: Vec<Sink>,
 
+    /// Parameter values for sinks. Key is a tuple of sink identifier and parameter name.
+    sink_params: HashMap<(IdentId, CompactString), syn::Expr>,
+
+    /// Filter values for sources. Key is a tuple of source identifier and parameter name.
+    src_filters: HashMap<(IdentId, CompactString), syn::Expr>,
+
     /// Pipes that connect sources to sinks.
     /// Each pipe here is a tuple of source and sink indexes,
     /// in [Self::sources] and [Self::sinks].
@@ -30,6 +36,15 @@ pub struct Ctx {
 #[derive(Debug, thiserror::Error)]
 #[error("Project name cannot be empty")]
 pub struct EmptyNameError;
+
+#[derive(Debug, thiserror::Error)]
+pub enum AddParamErr {
+    #[error("Parameter's parent with the name {0} not found")]
+    DestNotFound(CompactString),
+
+    #[error("Parameter {0} already set to `{1:?}`")]
+    AlreadySet(CompactString, syn::Expr),
+}
 
 impl Ctx {
     pub fn new(
@@ -45,6 +60,8 @@ impl Ctx {
             explain: explain.unwrap_or_default(),
             srcs: Vec::new(),
             sinks: Vec::new(),
+            sink_params: HashMap::new(),
+            src_filters: HashMap::new(),
             pipes: Vec::new(),
         })
     }
@@ -69,11 +86,19 @@ impl Ctx {
         &self.sinks
     }
 
+    fn sink_id(&self, sink: &str) -> Option<IdentId> {
+        self.sinks.iter().position(|s| s.name() == sink)
+    }
+
+    fn source_id(&self, src: &str) -> Option<IdentId> {
+        self.srcs.iter().position(|s| s.name() == src)
+    }
+
     pub fn add_source(&mut self, src: impl Into<DataSource>) -> Result<(), AddSourceErr> {
         let src = src.into();
 
         // Check if the source with the same name already exists.
-        if self.srcs.iter().any(|s| s.name() == src.name()) {
+        if self.source_id(src.name()).is_some() {
             return Err(AddSourceErr::NameExists(src.name().into()));
         }
 
@@ -85,7 +110,7 @@ impl Ctx {
         let sink = sink.into();
 
         // Check if the sink with the same name already exists.
-        if self.sinks.iter().any(|s| s.name() == sink.name()) {
+        if self.sink_id(sink.name()).is_some() {
             return Err(AddSinkErr::NameExists(sink.name().into()));
         }
 
@@ -95,14 +120,10 @@ impl Ctx {
 
     pub fn add_pipe(&mut self, src: &str, sink: &str) -> Result<(), AddPipeErr> {
         let src_idx = self
-            .srcs
-            .iter()
-            .position(|s| s.name() == src)
+            .source_id(src)
             .ok_or_else(|| AddPipeErr::SourceNotFound(src.into()))?;
         let sink_idx = self
-            .sinks
-            .iter()
-            .position(|s| s.name() == sink)
+            .sink_id(sink)
             .ok_or_else(|| AddPipeErr::SinkNotFound(sink.into()))?;
 
         self.pipes.push((src_idx, sink_idx));
@@ -114,6 +135,52 @@ impl Ctx {
             .iter()
             .copied()
             .map(|(src, sink)| (&self.srcs[src], &self.sinks[sink]))
+    }
+
+    /// Add a parameter value to the sink.
+    pub fn add_sink_param(
+        &mut self,
+        sink_name: &str,
+        param_name: &str,
+        value: syn::Expr,
+    ) -> Result<(), AddParamErr> {
+        let sink_idx = self
+            .sink_id(sink_name)
+            .ok_or_else(|| AddParamErr::DestNotFound(sink_name.into()))?;
+
+        // Check if exists, and if not - add new value.
+        let entry = self.sink_params.entry((sink_idx, param_name.into()));
+        use hashbrown::hash_map::Entry;
+        match entry {
+            Entry::Occupied(e) => Err(AddParamErr::AlreadySet(param_name.into(), e.get().clone())),
+            Entry::Vacant(e) => {
+                e.insert(value);
+                Ok(())
+            }
+        }
+    }
+
+    /// Add a filter value to the source.
+    pub fn add_src_filter(
+        &mut self,
+        src_name: &str,
+        filter_name: &str,
+        value: syn::Expr,
+    ) -> Result<(), AddParamErr> {
+        let src_idx = self
+            .source_id(src_name)
+            .ok_or_else(|| AddParamErr::DestNotFound(src_name.into()))?;
+
+        // Check if exists, and if not - add new value.
+        let entry = self.src_filters.entry((src_idx, filter_name.into()));
+        use hashbrown::hash_map::Entry;
+        match entry {
+            Entry::Occupied(e) => Err(AddParamErr::AlreadySet(filter_name.into(), e.get().clone())),
+            Entry::Vacant(e) => {
+                e.insert(value);
+                Ok(())
+            }
+        }
     }
 }
 
