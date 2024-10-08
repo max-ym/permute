@@ -49,7 +49,7 @@ fn gen_data_src(src: &DataSource) -> TokenStream {
 }
 
 fn gen_data_src_struc(src: &DataSource) -> TokenStream {
-    let src_name = src.src_name();
+    let src_name = src.name();
     info!("Generating data source `{src_name}` struct");
 
     let filters = src.filters().iter().map(|(k, v)| {
@@ -68,11 +68,12 @@ fn gen_data_src_struc(src: &DataSource) -> TokenStream {
 }
 
 fn gen_data_src_impls(src: &DataSource) -> TokenStream {
-    let src_name = src.src_name();
+    let src_name = src.name();
     info!("Generating data source `{src_name}` impls");
 
     let impls = src.filters().iter().map(|(name, _)| {
         let fmt_ty = filter_ty(src, name);
+        let name = name.ident();
         // Generate getter for the filter.
         quote! {
             pub fn #name(&self) -> #fmt_ty {
@@ -132,7 +133,7 @@ fn gen_data_src_impls(src: &DataSource) -> TokenStream {
 }
 
 fn filter_ty(src: &DataSource, filter: &str) -> syn::Ident {
-    format!("{}_{filter}", src.src_name()).ident()
+    format!("{}_{filter}", src.name()).ident()
 }
 
 fn sink_param_ty(sink: &Sink, param: &str) -> syn::Ident {
@@ -202,8 +203,9 @@ fn gen_data_sink_struc(sink: &Sink) -> TokenStream {
 
     let params = sink.params().iter().map(|(k, _)| {
         let name = sink_param_ty(sink, k);
+        let ident = k.ident();
         quote! {
-            #k: #name
+            #ident: #name
         }
     });
 

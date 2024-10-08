@@ -1,4 +1,4 @@
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use hashbrown::HashMap;
 use log::*;
 use smallvec::SmallVec;
@@ -253,6 +253,12 @@ impl MainBinding {
 
     pub fn ty(&self) -> &syn::Type {
         &self.ty
+    }
+
+    /// Returns the type as a string.
+    pub fn ty_str(&self) -> CompactString {
+        use quote::ToTokens;
+        self.ty.to_token_stream().to_compact_string()
     }
 }
 

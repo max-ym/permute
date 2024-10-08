@@ -49,6 +49,12 @@ pub enum LoadError {
 
     #[error(transparent)]
     AddSource(#[from] crate::context::AddSourceErr),
+
+    #[error(transparent)]
+    AddBinding(#[from] crate::context::AddBindingErr),
+
+    #[error(transparent)]
+    AddParam(#[from] crate::context::AddParamErr),
 }
 
 /// Error during loading of the main file.
@@ -141,14 +147,26 @@ impl LoadProjectDir<'_> {
 
         info!("Fill in the bindings from the main file");
         for (name, cfg) in main.bindings() {
-            let ty = cfg.ty();
-            let mut cfg_iter = BindingCfgIter::new(cfg.cfg());
-            for (key, value) in cfg_iter {
-                todo!()
+            let ty = cfg.ty_str();
+            for (key, value) in BindingCfgIter::new(cfg.cfg()) {
+                let result = ctx.add_binding(name.into(), &ty);
+                match result {
+                    Err(e) => errors.push(e.into()),
+                    Ok(_) => {
+                        let result = ctx.add_param(name, key, value);
+                        if let Err(e) = result {
+                            errors.push(e.into());
+                        }
+                    }
+                }
             }
         }
 
-        todo!()
+        if errors.is_empty() {
+            Ok(ctx)
+        } else {
+            Err(errors.into_vec())
+        }
     }
 
     fn validate_path(&self) -> Result<(), LoadError> {
@@ -326,17 +344,13 @@ impl PathBufExt for PathBuf {
 type BindingCfgInnerIter<'a> = hashbrown::hash_map::Iter<'a, CompactString, v01::MainBindingField>;
 
 /// Traverse [v01::BindingCfg] tree, providing iterator to [ParamKey] and associated
-/// [CompactString] value.
+/// parsed [syn::Expr] value.
 struct BindingCfgIter<'a> {
     /// Current prefix of the key.
     prefix: ParamKey,
 
     /// Stack of the positions in the map.
     iter_stack: SmallVec<[BindingCfgInnerIter<'a>; 8]>,
-
-    /// Iterator over the list of values. If the current value is a list, this iterator
-    /// is used to traverse it.
-    list_iter: Option<std::slice::Iter<'a, CompactString>>,
 
     /// Set as Some when this iterator was created on a single Inline value in the config.
     /// It is turned to None when this element is returned.
@@ -350,13 +364,11 @@ impl<'a> BindingCfgIter<'a> {
             Inline(v) => Self {
                 prefix: Default::default(),
                 iter_stack: Default::default(),
-                list_iter: None,
                 inline: Some(v),
             },
             Map(map) => Self {
                 prefix: Default::default(),
                 iter_stack: smallvec![map.iter()],
-                list_iter: None,
                 inline: None,
             },
         }
@@ -387,25 +399,28 @@ impl<'a> BindingCfgIter<'a> {
         self.iter_stack.push(iter);
         self.prefix.push(prefix);
     }
+
+    /// Convert the list of values into a single [syn::Expr], which is an Array internally.
+    fn list_to_expr(vec: &[CompactString]) -> syn::Expr {
+        let iter = vec.iter().map(|v| {
+            syn::parse_str::<syn::Expr>(v).expect("should be valid Rust expression on this stage")
+        });
+        let quote = quote::quote! { &[#(#iter),*] }.into();
+        syn::parse2(quote).expect("above quote! should emit valid type")
+    }
+
+    fn str_to_expr(s: &str) -> syn::Expr {
+        syn::parse_str::<syn::Expr>(s).expect("should be valid Rust expression on this stage")
+    }
 }
 
 impl<'a> Iterator for BindingCfgIter<'a> {
-    type Item = (ParamKey, &'a CompactString);
+    type Item = (ParamKey, syn::Expr);
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(inline) = self.inline.take() {
             trace!("Returning single inline value `{inline}`, terminating the iterator");
-            return Some((self.prefix.clone(), inline));
-        } else if let Some(list_iter) = self.list_iter.as_mut() {
-            if let Some(value) = list_iter.next() {
-                trace!("Returning list value `{value}`");
-                return Some((self.prefix.clone(), value));
-            } else {
-                trace!(
-                    "List is exhausted, terminating the list iterator and continuing with the map"
-                );
-                self.list_iter = None;
-            }
+            return Some((self.prefix.clone(), Self::str_to_expr(inline)));
         } else {
             trace!("Map iteration");
         }
@@ -419,19 +434,14 @@ impl<'a> Iterator for BindingCfgIter<'a> {
                             trace!("Found value `{value}`");
                             let mut prefix = self.prefix.clone();
                             prefix.push(key.clone());
-                            return Some((prefix, value));
+                            return Some((prefix, Self::str_to_expr(value)));
                         }
                         List(list) => {
                             trace!("Found list");
                             let mut prefix = self.prefix.clone();
                             prefix.push(key.clone());
-                            let mut list_iter = list.iter();
-                            let next_value = list_iter.next();
-                            self.list_iter = Some(list_iter);
-                            return next_value.map(|v| {
-                                trace!("Returning `{v}` from new list");
-                                (prefix, v)
-                            });
+                            let expr = Self::list_to_expr(list);
+                            return Some((prefix, expr));
                         }
                         Map(map) => {
                             trace!("Found map, pushing it to the stack");

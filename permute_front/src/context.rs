@@ -5,6 +5,7 @@ use log::*;
 use smallvec::SmallVec;
 
 type IdentId = usize;
+type BindingId = IdentId;
 
 /// Code generation for the [Ctx](crate::context::Ctx).
 pub mod codegen;
@@ -23,16 +24,28 @@ pub struct Ctx {
     /// Data sinks.
     sinks: Vec<Sink>,
 
-    /// Parameter values for sinks. Key is a tuple of sink identifier and parameter name.
-    sink_params: HashMap<(IdentId, CompactString), syn::Expr>,
+    srcs_bindings: Vec<Binding>,
+    sinks_bindings: Vec<Binding>,
 
-    /// Filter values for sources. Key is a tuple of source identifier and parameter name.
-    src_filters: HashMap<(IdentId, CompactString), syn::Expr>,
+    /// Parameter values for sink bindings. Key is a tuple of sink identifier and parameter name.
+    sink_params: HashMap<(IdentId, ParamKey), syn::Expr>,
+
+    /// Filter values for source bindings. Key is a tuple of source identifier and parameter name.
+    src_filters: HashMap<(IdentId, ParamKey), syn::Expr>,
 
     /// Pipes that connect sources to sinks.
     /// Each pipe here is a tuple of source and sink indexes,
-    /// in [Self::sources] and [Self::sinks].
-    pipes: Vec<(IdentId, IdentId)>,
+    /// in [Self::srcs_bindings] and [Self::sinks_bindings].
+    pipes: Vec<(BindingId, BindingId)>,
+}
+
+/// Bindings are used to configure individual instances of sources and sinks.
+pub struct Binding {
+    /// Name of the binding identified. Cannot be empty.
+    name: CompactString,
+
+    /// Source or sink that this binding is for.
+    target: IdentId,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -45,7 +58,16 @@ pub enum AddParamErr {
     DestNotFound(CompactString),
 
     #[error("Parameter {0} already set to `{1:?}`")]
-    AlreadySet(CompactString, syn::Expr),
+    AlreadySet(ParamKey, syn::Expr),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AddBindingErr {
+    #[error("Binding with the name {0} already exists")]
+    NameExists(CompactString),
+
+    #[error("Binding target with the name {0} not found")]
+    NotFound(CompactString),
 }
 
 impl Ctx {
@@ -62,6 +84,8 @@ impl Ctx {
             explain: explain.unwrap_or_default(),
             srcs: Vec::new(),
             sinks: Vec::new(),
+            srcs_bindings: Vec::new(),
+            sinks_bindings: Vec::new(),
             sink_params: HashMap::new(),
             src_filters: HashMap::new(),
             pipes: Vec::new(),
@@ -148,24 +172,90 @@ impl Ctx {
             .map(|(src, sink)| (&self.srcs[src], &self.sinks[sink]))
     }
 
+    pub fn source_binding(&self, name: &str) -> Option<IdentId> {
+        self.srcs_bindings.iter().position(|b| b.name == name)
+    }
+
+    pub fn sink_binding(&self, name: &str) -> Option<IdentId> {
+        self.sinks_bindings.iter().position(|b| b.name == name)
+    }
+
+    pub fn add_source_binding(
+        &mut self,
+        name: CompactString,
+        src: &str,
+    ) -> Result<IdentId, AddBindingErr> {
+        let src_idx = self
+            .source_id(src)
+            .ok_or_else(|| AddBindingErr::NotFound(src.into()))?;
+
+        // Check if the binding with the same name already exists.
+        if self.source_binding(&name).is_some() {
+            return Err(AddBindingErr::NameExists(name));
+        }
+
+        debug!("Add source binding `{name}` for `{src}` to the context");
+        let binding = Binding {
+            name,
+            target: src_idx,
+        };
+        self.srcs_bindings.push(binding);
+        Ok(self.srcs_bindings.len() - 1)
+    }
+
+    pub fn add_sink_binding(
+        &mut self,
+        name: CompactString,
+        sink: &str,
+    ) -> Result<IdentId, AddBindingErr> {
+        let sink_idx = self
+            .sink_id(sink)
+            .ok_or_else(|| AddBindingErr::NotFound(sink.into()))?;
+
+        // Check if the binding with the same name already exists.
+        if self.sink_binding(&name).is_some() {
+            return Err(AddBindingErr::NameExists(name));
+        }
+
+        debug!("Add sink binding `{name}` for `{sink}` to the context");
+        let binding = Binding {
+            name,
+            target: sink_idx,
+        };
+        self.sinks_bindings.push(binding);
+        Ok(self.sinks_bindings.len() - 1)
+    }
+
+    pub fn add_binding(
+        &mut self,
+        name: CompactString,
+        src_or_sink: &str,
+    ) -> Result<IdentId, AddBindingErr> {
+        if self.sink_id(src_or_sink).is_some() {
+            self.add_sink_binding(name, src_or_sink)
+        } else {
+            self.add_source_binding(name, src_or_sink)
+        }
+    }
+
     /// Add a parameter value to the sink.
     pub fn add_sink_param(
         &mut self,
-        sink_name: &str,
-        param_name: &str,
+        sink_binding_name: &str,
+        param_name: ParamKey,
         value: syn::Expr,
     ) -> Result<(), AddParamErr> {
-        let sink_idx = self
-            .sink_id(sink_name)
-            .ok_or_else(|| AddParamErr::DestNotFound(sink_name.into()))?;
+        let sink_bind_idx = self
+            .sink_binding(sink_binding_name)
+            .ok_or_else(|| AddParamErr::DestNotFound(sink_binding_name.into()))?;
 
-        debug!("Add parameter `{param_name}` to sink `{sink_name}`");
+        debug!("Add parameter `{param_name}` to sink `{sink_binding_name}`");
 
         // Check if exists, and if not - add new value.
-        let entry = self.sink_params.entry((sink_idx, param_name.into()));
+        let entry = self.sink_params.entry((sink_bind_idx, param_name));
         use hashbrown::hash_map::Entry;
         match entry {
-            Entry::Occupied(e) => Err(AddParamErr::AlreadySet(param_name.into(), e.get().clone())),
+            Entry::Occupied(e) => Err(AddParamErr::AlreadySet(e.key().1.clone(), e.get().clone())),
             Entry::Vacant(e) => {
                 e.insert(value);
                 Ok(())
@@ -177,18 +267,20 @@ impl Ctx {
     pub fn add_src_filter(
         &mut self,
         src_name: &str,
-        filter_name: &str,
+        filter_name: ParamKey,
         value: syn::Expr,
     ) -> Result<(), AddParamErr> {
-        let src_idx = self
-            .source_id(src_name)
+        let src_bind_idx = self
+            .source_binding(src_name)
             .ok_or_else(|| AddParamErr::DestNotFound(src_name.into()))?;
 
+        debug!("Add filter `{filter_name}` to source `{src_name}`");
+
         // Check if exists, and if not - add new value.
-        let entry = self.src_filters.entry((src_idx, filter_name.into()));
+        let entry = self.src_filters.entry((src_bind_idx, filter_name));
         use hashbrown::hash_map::Entry;
         match entry {
-            Entry::Occupied(e) => Err(AddParamErr::AlreadySet(filter_name.into(), e.get().clone())),
+            Entry::Occupied(e) => Err(AddParamErr::AlreadySet(e.key().1.clone(), e.get().clone())),
             Entry::Vacant(e) => {
                 e.insert(value);
                 Ok(())
@@ -198,14 +290,14 @@ impl Ctx {
 
     pub fn add_param(
         &mut self,
-        sink_or_src_name: &str,
-        param: &str,
+        sink_or_src_binding_name: &str,
+        param: ParamKey,
         value: syn::Expr,
     ) -> Result<(), AddParamErr> {
-        if self.sink_id(sink_or_src_name).is_some() {
-            self.add_sink_param(sink_or_src_name, param, value)
+        if self.sink_id(sink_or_src_binding_name).is_some() {
+            self.add_sink_param(sink_or_src_binding_name, param, value)
         } else {
-            self.add_src_filter(sink_or_src_name, param, value)
+            self.add_src_filter(sink_or_src_binding_name, param, value)
         }
     }
 }
@@ -561,6 +653,18 @@ impl ParamKey {
 
     pub fn iter(&self) -> impl Iterator<Item = &str> {
         self.0.iter().map(|s| s.as_str())
+    }
+}
+
+impl std::fmt::Display for ParamKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, part) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, ".")?;
+            }
+            write!(f, "{part}")?;
+        }
+        Ok(())
     }
 }
 
