@@ -17,7 +17,7 @@ use rustc_errors::registry;
 use rustc_hash::FxHashMap;
 use rustc_session::config;
 
-use permute::analyze::*;
+use compile::analyze::*;
 
 fn main() {
     simple_logger::SimpleLogger::new()
@@ -72,6 +72,10 @@ fn c() {
 fn d() {
     a();
 }
+
+pub mod m {
+    pub struct S;
+}
     
 "#
             .into(),
@@ -124,6 +128,11 @@ fn d() {
                     }
                 } else {
                     println!("No recursion found.");
+                }
+
+                // Print out item names.
+                for item in types(tcx) {
+                    println!("Public: {item}");
                 }
             })
         });

@@ -12,6 +12,8 @@ thiserror = "1.0"
 smallvec = { version = "1.13", features = ["serde", "union", "const_generics", "const_new"] }
 compact_str = { version = "0.8.0", features = ["serde"] }
 
+compile = { path = "../compile" }
+
 # Working with Rust code parsing, unparsing and formatting.
 syn = { version = "2.0", features = ["clone-impls", "extra-traits"] }
 quote = "1.0"

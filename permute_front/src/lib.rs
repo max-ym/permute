@@ -6,6 +6,10 @@ pub mod yaml;
 /// Context with all registered configurations.
 pub mod context;
 
+/// Rust file configurations. Basically hand-written code that has to be registered
+/// into the context. As other YAML configurations or code can depend on it.
+pub mod rs;
+
 #[cfg(test)]
 fn setup_logger() {
     use std::sync::OnceLock;

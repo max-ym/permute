@@ -1,8 +1,10 @@
+use compact_str::CompactString;
 use log::*;
 use rustc_middle::hir::map::Map;
 use rustc_middle::ty;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::def_id::LocalDefId;
+use smallvec::SmallVec;
 
 /// Ensure that there are no loops in the code.
 /// This, however, does not check for recursion.
@@ -251,4 +253,24 @@ pub fn no_recursion(tcx: TyCtxt) -> Result<(), Vec<Recursion>> {
     } else {
         Err(errors)
     }
+}
+
+/// Find all public types in the HIR. These can be
+/// later used to be registered into the frontend context.
+pub fn types(tcx: TyCtxt) -> Vec<CompactString> {
+    let items = tcx.hir_crate_items(()).free_items();
+    let visibilities = tcx.effective_visibilities(());
+    let adt_items = items.map(|def_id| tcx.hir().item(def_id)).filter(|i| i.is_adt());
+
+    let mut vec = SmallVec::<[_; 128]>::new();
+
+    for item in adt_items {
+        let id = item.hir_id().as_owner().unwrap().def_id;
+        if visibilities.is_directly_public(id) {
+            println!("{:?}", item.ident);
+            vec.push(tcx.def_path(id.into()).to_string_no_crate_verbose().into());
+        }
+    }
+
+    vec.into_vec()
 }
