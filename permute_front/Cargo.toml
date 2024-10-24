@@ -18,3 +18,7 @@ quote = "1.0"
 proc-macro2 = "1.0"
 prettyplease = "0.2"
 rust-format = { version = "0.3", features = ["pretty_please", "token_stream"] }
+
+[dev-dependencies]
+fern = { version = "0.7", features = ["colored"] }
+humantime = "2.1"

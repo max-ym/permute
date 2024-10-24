@@ -18,16 +18,16 @@ pub struct LoadProjectDir<'a> {
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
     #[error("Project path does not exist. {0}")]
-    PathDoesNotExist(std::path::PathBuf),
+    PathDoesNotExist(PathBuf),
 
     #[error("Path is not a directory: {0}")]
-    PathIsNotDir(std::path::PathBuf),
+    PathIsNotDir(PathBuf),
 
     #[error(transparent)]
     MainFileError(#[from] MainLoadError),
 
-    #[error(transparent)]
-    Yaml(#[from] crate::yaml::Error),
+    #[error("Error loading YAML file {1}. {0}")]
+    Yaml(crate::yaml::Error, PathBuf),
 
     #[error("Error listing other YAML files. {0}")]
     DirList(std::io::Error),
@@ -60,8 +60,8 @@ pub enum LoadError {
 /// Error during loading of the main file.
 #[derive(Debug, thiserror::Error)]
 pub enum MainLoadError {
-    #[error("Main file cannot be found in the project directory")]
-    NotFound,
+    #[error("Main file cannot be found in the project directory ({0})")]
+    NotFound(PathBuf),
 
     #[error("Error loading main file. {0}")]
     LoadError(#[from] crate::yaml::Error),
@@ -95,7 +95,7 @@ impl LoadProjectDir<'_> {
                 $src_or_sink
                     .into_iter()
                     .map(|v| {
-                        let s = v.rust_path_string();
+                        let s = v.rust_path_string(self.path);
                         let (_, v) = v.unwrap();
                         hir::$ty::try_from(v).map(|v| v.to_named(s))
                     })
@@ -186,10 +186,10 @@ impl LoadProjectDir<'_> {
         debug!("Load main file");
         let main_file = self.path.join("main.yaml");
         if !main_file.exists() {
-            return Err(MainLoadError::NotFound);
+            return Err(MainLoadError::NotFound(main_file));
         }
 
-        let main = v01::Main::load_from_path(Self::MAIN_FILE_NAME.as_ref())?;
+        let main = v01::Main::load_from_path(&main_file)?;
         Ok(main)
     }
 
@@ -249,7 +249,7 @@ impl LoadProjectDir<'_> {
             match val {
                 Ok(Sink(sink)) => sinks.push(path.wrap(sink)),
                 Ok(Source(src)) => srcs.push(path.wrap(src)),
-                Err(e) => errors.push(e.into()),
+                Err(e) => errors.push(LoadError::Yaml(e, path)),
             }
         }
 
@@ -267,8 +267,14 @@ enum SinkOrSource {
 impl SinkOrSource {
     fn load(file: &std::path::Path) -> Result<Self, crate::yaml::Error> {
         use serde_yml::from_str;
+
+        #[derive(serde::Deserialize)]
+        struct FileWithHeader {
+            permute: v01::Header,
+        }
+
         let s = std::fs::read_to_string(file)?;
-        let header = from_str::<v01::Header>(&s)?;
+        let header = from_str::<FileWithHeader>(&s)?.permute;
 
         use v01::FileKind::*;
         match header.ty {
@@ -297,10 +303,34 @@ struct File<T> {
 impl<T> File<T> {
     /// Translate relative project path into structure, like from "module1/FileName.yaml"
     /// into "module1::FileName".
-    fn rust_path_string(&self) -> String {
+    /// The passed root_path is excluded from the resulting path.
+    ///
+    /// # Panics
+    /// The `root_path` is expected to be
+    /// relative to the project root. If `self` file is not relative to the
+    /// project root, the function will panic.
+    fn rust_path_string(&self, root_path: &std::path::Path) -> String {
         use std::path::Component::*;
         use std::path::Path;
-        let components = self.path.components();
+
+        let root_components = root_path.components();
+
+        let components = {
+            trace!(
+                "Excluding root path `{}` from the file path `{}`",
+                root_path.display(),
+                self.path.display()
+            );
+
+            let mut components = self.path.components();
+            for root_component in root_components {
+                const ERR: &str = "root path is not a prefix of the file path";
+                let component = components.next().expect(ERR);
+                assert_eq!(root_component, component, "{ERR}");
+            }
+            components
+        };
+
         let mut s = CompactString::default();
         for component in components {
             let is_start = s.is_empty();
@@ -464,14 +494,40 @@ impl<'a> Iterator for BindingCfgIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     #[test]
     fn as_rust_path_string() {
         let path = File {
-            path: PathBuf::from("module1/FileName.yaml"),
+            path: PathBuf::from("root/module1/FileName.yaml"),
             t: (),
         };
-        assert_eq!(path.rust_path_string(), "module1::FileName");
+        assert_eq!(path.rust_path_string(Path::new("root")), "module1::FileName");
+    }
+
+    #[test]
+    fn load_project() {
+        crate::setup_logger();
+
+        let result = LoadProjectDir {
+            path: std::path::Path::new("src/samples/example1"),
+        }
+        .run();
+        match result {
+            Ok(ctx) => {
+                assert_eq!(ctx.sinks().len(), 2);
+                assert_eq!(ctx.sources().len(), 1);
+                // TODO
+            }
+            Err(errors) => {
+                for (i, error) in errors.into_iter().enumerate() {
+                    eprintln!("{i}: {error}");
+                    eprintln!("{i}: {error:#?}");
+                }
+                panic!("Errors during loading");
+            }
+        }
     }
 }
