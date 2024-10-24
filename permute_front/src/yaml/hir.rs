@@ -414,7 +414,7 @@ impl TryFrom<super::v01::Sink> for Unnamed<Sink> {
 
                 if let Some(ty) = ty {
                     params.push(SinkParam {
-                        name: CompactString::from(name),
+                        name,
                         explain: param.explain.unwrap_or_default(),
                         ty,
                         default,
@@ -431,8 +431,7 @@ impl TryFrom<super::v01::Sink> for Unnamed<Sink> {
         let additional_checks = input
             .check
             .map(|v| parse_check!(v))
-            .unwrap_or_default()
-            .into();
+            .unwrap_or_default();
 
         if errors.is_empty() {
             Ok(Unnamed(Sink {
@@ -730,14 +729,12 @@ impl TryFrom<super::v01::Source> for Unnamed<Source> {
         let filter_additional_checks = input
             .filter_check
             .map(|v| parse_check!(v))
-            .unwrap_or_default()
-            .into();
+            .unwrap_or_default();
 
         let column_additional_checks = input
             .column_check
             .map(|v| parse_check!(v))
-            .unwrap_or_default()
-            .into();
+            .unwrap_or_default();
 
         let uses = parse_uses(input.header.uses)
             .map_err(|e| {

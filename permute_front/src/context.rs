@@ -239,6 +239,8 @@ impl Ctx {
     }
 
     /// Add a parameter value to the sink.
+    // See the comment on Clippy in the `add_param` method.
+    #[allow(clippy::result_large_err)]
     pub fn add_sink_param(
         &mut self,
         sink_binding_name: &str,
@@ -264,6 +266,8 @@ impl Ctx {
     }
 
     /// Add a filter value to the source.
+    // See the comment on Clippy in the `add_param` method.
+    #[allow(clippy::result_large_err)]
     pub fn add_src_filter(
         &mut self,
         src_name: &str,
@@ -288,6 +292,12 @@ impl Ctx {
         }
     }
 
+    // Allow clippy::result_large_err as in our (current) usecase we don't
+    // pop errors up the call stack and immediately handle them, so we can accept
+    // a larger byte size for the error type as it would anyway be probably faster than
+    // a heap allocation/deallocation.
+    // This is true for current 200 bytes, but may change in the future...
+    #[allow(clippy::result_large_err)]
     pub fn add_param(
         &mut self,
         sink_or_src_binding_name: &str,

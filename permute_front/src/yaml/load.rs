@@ -216,6 +216,7 @@ impl LoadProjectDir<'_> {
     ///
     /// # Failure
     /// On error, the error array is filled with errors and function returns empty arrays.
+    #[allow(clippy::type_complexity)]
     fn load_sinks_and_sources(
         &self,
         errors: &mut SmallVec<[LoadError; 32]>,
@@ -230,7 +231,7 @@ impl LoadProjectDir<'_> {
             Ok(list) => list,
             Err(e) => {
                 error!("Error listing other YAML files: {e:?}");
-                errors.push(e.into());
+                errors.push(e);
                 return Default::default();
             }
         };
@@ -405,7 +406,7 @@ impl<'a> BindingCfgIter<'a> {
         let iter = vec.iter().map(|v| {
             syn::parse_str::<syn::Expr>(v).expect("should be valid Rust expression on this stage")
         });
-        let quote = quote::quote! { &[#(#iter),*] }.into();
+        let quote = quote::quote! { &[#(#iter),*] };
         syn::parse2(quote).expect("above quote! should emit valid type")
     }
 

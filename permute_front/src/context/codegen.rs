@@ -1,7 +1,6 @@
 use super::*;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, TokenStreamExt};
-use log::*;
 
 pub fn gen_main(ctx: &Ctx) -> TokenStream {
     info!("Generator main function started");
