@@ -135,12 +135,14 @@ impl LoadProjectDir<'_> {
         info!("Add sinks to the context");
         for sink in sinks {
             if let Err(e) = ctx.add_sink(sink) {
+                error!("Error adding sink to the context. {e}");
                 errors.push(e.into())
             }
         }
         info!("Add sources to the context");
         for src in srcs {
             if let Err(e) = ctx.add_source(src) {
+                error!("Error adding source to the context. {e}");
                 errors.push(e.into())
             }
         }
@@ -151,7 +153,10 @@ impl LoadProjectDir<'_> {
             for (key, value) in BindingCfgIter::new(cfg.cfg()) {
                 let result = ctx.add_binding(name.into(), &ty);
                 match result {
-                    Err(e) => errors.push(e.into()),
+                    Err(e) => {
+                        error!("Error adding binding to the context. {e}");
+                        errors.push(e.into());
+                    }
                     Ok(_) => {
                         let result = ctx.add_param(name, key, value);
                         if let Err(e) = result {
@@ -172,10 +177,12 @@ impl LoadProjectDir<'_> {
     fn validate_path(&self) -> Result<(), LoadError> {
         debug!("Validate project path");
         if !self.path.exists() {
+            error!("Project path does not exist: {}", self.path.display());
             return Err(LoadError::PathDoesNotExist(self.path.into()));
         }
 
         if !self.path.is_dir() {
+            error!("Path is not a directory: {}", self.path.display());
             return Err(LoadError::PathIsNotDir(self.path.into()));
         }
 
