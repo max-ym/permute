@@ -8,6 +8,7 @@ log = "0.4"
 simple_logger = "1"
 compact_str = { version = "0.8.0", features = [] }
 smallvec = { version = "1.13", features = ["union", "const_generics", "const_new"] }
+thiserror = "1.0"
 
 [package.metadata.rust-analyzer]
 rustc_private = true

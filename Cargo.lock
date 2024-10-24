@@ -105,6 +105,7 @@ dependencies = [
  "log",
  "simple_logger",
  "smallvec",
+ "thiserror",
 ]
 
 [[package]]
