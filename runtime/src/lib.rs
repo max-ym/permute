@@ -3,6 +3,6 @@
 #![no_std]
 #![no_core]
 
-extern crate permute_std as std;
+extern crate permute_libcore as core;
 
 pub mod enclosed;

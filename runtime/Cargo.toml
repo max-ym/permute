@@ -5,6 +5,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-permute_std = { path = "../permute_std" }
+permute_libcore = { path = "../permute_libcore" }
 lazy-regex = "3.3"
 smallvec = { version = "1.13", features = ["union"] }
