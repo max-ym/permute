@@ -128,9 +128,11 @@ impl Ctx {
 
     pub fn add_source(&mut self, src: impl Into<DataSource>) -> Result<(), AddSourceErr> {
         let src = src.into();
+        trace!("Add source `{}`", src.name());
 
         // Check if the source with the same name already exists.
         if self.source_id(src.name()).is_some() {
+            error!("Source with the name `{}` already exists", src.name());
             return Err(AddSourceErr::NameExists(src.name().into()));
         }
 
@@ -231,6 +233,7 @@ impl Ctx {
         name: CompactString,
         src_or_sink: &str,
     ) -> Result<IdentId, AddBindingErr> {
+        trace!("Add binding `{name}` for `{src_or_sink}`");
         if self.sink_id(src_or_sink).is_some() {
             self.add_sink_binding(name, src_or_sink)
         } else {

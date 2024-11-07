@@ -43,6 +43,11 @@ impl Main {
     /// Load the main file from the given path.
     pub fn load_from_path(path: &std::path::Path) -> Result<Self, super::Error> {
         let s = std::fs::read_to_string(path)?;
+        Self::load_from_str(s.as_str())
+    }
+
+    /// Load the main file from the given string slice.
+    pub fn load_from_str(s: &str) -> Result<Self, super::Error> {
         let main: Main = serde_yml::from_str(&s)?;
         Ok(main)
     }

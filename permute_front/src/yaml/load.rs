@@ -140,6 +140,7 @@ impl LoadProjectDir<'_> {
             }
         }
         info!("Add sources to the context");
+        trace!("Sources count: {}", srcs.len());
         for src in srcs {
             if let Err(e) = ctx.add_source(src) {
                 error!("Error adding source to the context. {e}");
@@ -531,6 +532,22 @@ pub(crate) mod tests {
                     eprintln!("{i}: {error:#?}");
                 }
                 panic!("Errors during loading");
+            }
+        }
+    }
+
+    #[test]
+    fn binding_cfg_iter() {
+        let main = include_str!("../samples/example1/main.yaml");
+        let main = super::super::v01::Main::load_from_str(main).unwrap();
+        let main = hir::Main::try_from(main).unwrap();
+
+        println!("{main:#?}");
+
+        for (name, iter) in main.bindings() {
+            println!("{name}:");
+            for (key, expr) in BindingCfgIter::new(iter.cfg()) {
+                println!("  {} → {}", key, quote::quote!(#expr));
             }
         }
     }
