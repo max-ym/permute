@@ -151,14 +151,14 @@ impl LoadProjectDir<'_> {
         info!("Fill in the bindings from the main file");
         for (name, cfg) in main.bindings() {
             let ty = cfg.ty_str();
-            for (key, value) in BindingCfgIter::new(cfg.cfg()) {
-                let result = ctx.add_binding(name.into(), &ty);
-                match result {
-                    Err(e) => {
-                        error!("Error adding binding to the context. {e}");
-                        errors.push(e.into());
-                    }
-                    Ok(_) => {
+            let result = ctx.add_binding(name.into(), &ty);
+            match result {
+                Err(e) => {
+                    error!("Error adding binding to the context. {e}");
+                    errors.push(e.into());
+                }
+                Ok(_) => {
+                    for (key, value) in BindingCfgIter::new(cfg.cfg()) {
                         let result = ctx.add_param(name, key, value);
                         if let Err(e) = result {
                             errors.push(e.into());
@@ -512,7 +512,10 @@ pub(crate) mod tests {
             path: PathBuf::from("root/module1/FileName.yaml"),
             t: (),
         };
-        assert_eq!(path.rust_path_string(Path::new("root")), "module1::FileName");
+        assert_eq!(
+            path.rust_path_string(Path::new("root")),
+            "module1::FileName"
+        );
     }
 
     pub fn do_load_project() -> Ctx {
@@ -538,6 +541,8 @@ pub(crate) mod tests {
 
     #[test]
     fn binding_cfg_iter() {
+        crate::setup_logger();
+
         let main = include_str!("../samples/example1/main.yaml");
         let main = super::super::v01::Main::load_from_str(main).unwrap();
         let main = hir::Main::try_from(main).unwrap();
