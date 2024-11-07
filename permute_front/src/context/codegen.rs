@@ -250,3 +250,22 @@ impl StrExt for str {
         syn::Ident::new(self, Span::call_site())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rust_format::{Formatter, PrettyPlease};
+
+    use super::*;
+
+    #[test]
+    fn printall() {
+        crate::setup_logger();
+        
+        let ctx = crate::yaml::load::tests::do_load_project();
+        let tokens = gen_main(&ctx);
+        let fmt = PrettyPlease::default()
+            .format_str(tokens.to_string())
+            .unwrap();
+        println!("{fmt}");
+    }
+}

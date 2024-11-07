@@ -3,6 +3,5 @@ resolver = "2"
 members = [
     "compile",
     "permute_front",
-    "permute_libcore",
     "runtime",
 ]

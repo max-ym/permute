@@ -500,7 +500,7 @@ impl<'a> Iterator for BindingCfgIter<'a> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::path::Path;
 
     use super::*;
@@ -514,10 +514,7 @@ mod tests {
         assert_eq!(path.rust_path_string(Path::new("root")), "module1::FileName");
     }
 
-    #[test]
-    fn load_project() {
-        crate::setup_logger();
-
+    pub fn do_load_project() -> Ctx {
         let result = LoadProjectDir {
             path: std::path::Path::new("src/samples/example1"),
         }
@@ -526,7 +523,7 @@ mod tests {
             Ok(ctx) => {
                 assert_eq!(ctx.sinks().len(), 2);
                 assert_eq!(ctx.sources().len(), 1);
-                // TODO
+                ctx
             }
             Err(errors) => {
                 for (i, error) in errors.into_iter().enumerate() {
@@ -536,5 +533,11 @@ mod tests {
                 panic!("Errors during loading");
             }
         }
+    }
+
+    #[test]
+    fn load_project() {
+        crate::setup_logger();
+        do_load_project();
     }
 }
