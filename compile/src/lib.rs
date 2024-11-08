@@ -70,15 +70,12 @@ impl ProjectContent {
 
         let other_files = {
             let maybe_err: Vec<io::Result<RsFile>> = rust_files
-            .into_iter()
-            .map(|path| {
-                let content = std::fs::read_to_string(&path)?;
-                Ok(RsFile {
-                    path,
-                    content,
-                })  
-            })
-            .collect();
+                .into_iter()
+                .map(|path| {
+                    let content = std::fs::read_to_string(&path)?;
+                    Ok(RsFile { path, content })
+                })
+                .collect();
 
             let mut arr: SmallVec<[_; 64]> = SmallVec::with_capacity(maybe_err.len());
             for file in maybe_err {
@@ -174,7 +171,10 @@ impl rustc_span::source_map::FileLoader for RsFileLoader {
     }
 }
 
-fn pub_types(main: String, other_files: Vec<RsFile>) -> Result<Vec<CompactString>, ProjectContentError> {
+fn pub_types(
+    main: String,
+    other_files: Vec<RsFile>,
+) -> Result<Vec<CompactString>, ProjectContentError> {
     use analyze::*;
     use rustc_errors::registry;
     use rustc_hash::FxHashMap;
@@ -257,7 +257,10 @@ fn pub_types(main: String, other_files: Vec<RsFile>) -> Result<Vec<CompactString
                     }
                 }
 
-                Ok(types(tcx))
+                Ok(types(tcx)
+                    .into_iter()
+                    .map(|v| v.to_string_no_crate_verbose().into())
+                    .collect())
             })
         })
     })

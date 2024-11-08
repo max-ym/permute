@@ -23,7 +23,7 @@ fn main() {
     simple_logger::SimpleLogger::new()
         .with_colors(true)
         .with_level(log::LevelFilter::Info)
-        .with_module_level("permute", log::LevelFilter::Trace)
+        .with_module_level(env!("CARGO_PKG_NAME"), log::LevelFilter::Trace)
         .without_timestamps()
         .init()
         .unwrap();
@@ -46,36 +46,45 @@ fn main() {
         input: config::Input::Str {
             name: rustc_span::FileName::Custom("main.rs".into()),
             input: r#"
-static HELLO: &str = "Hello, world!";
-fn main() {
-    println!("{HELLO}");
+// static HELLO: &str = "Hello, world!";
+// fn main() {
+//     println!("{HELLO}");
+// }
+
+// fn i(i: impl std::iter::Iterator<Item = i32>) {
+//     for i in i {
+//         println!("{i}");
+//     }
+// }
+
+// fn a() {
+//     b();
+// }
+
+// fn b() {
+//     c();
+// }
+
+// fn c() {
+//     d();
+// }
+
+// fn d() {
+//     a();
+// }
+
+// pub mod m {
+//     pub struct S;
+// }
+
+struct S;
+
+mod m {
+    pub trait T {}
 }
 
-fn i(i: impl std::iter::Iterator<Item = i32>) {
-    for i in i {
-        println!("{i}");
-    }
-}
-
-fn a() {
-    b();
-}
-
-fn b() {
-    c();
-}
-
-fn c() {
-    d();
-}
-
-fn d() {
-    a();
-}
-
-pub mod m {
-    pub struct S;
-}
+use m::T;
+impl T for S {}
     
 "#
             .into(),
@@ -111,6 +120,7 @@ pub mod m {
             // Analyze the program and inspect the types of definitions.
             queries.global_ctxt().unwrap().enter(|tcx| {
                 let hir = tcx.hir();
+                sinks(tcx);
                 let none_forbidden_loops = no_forbidden_loops(hir);
                 if none_forbidden_loops {
                     println!("No forbidden loops found.");
@@ -131,9 +141,9 @@ pub mod m {
                 }
 
                 // Print out item names.
-                for item in types(tcx) {
-                    println!("Public: {item}");
-                }
+                // for item in types(tcx) {
+                //     println!("Public: {}", item);
+                // }
             })
         });
     });

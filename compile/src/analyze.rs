@@ -1,10 +1,31 @@
 use compact_str::CompactString;
+use itertools::Itertools;
 use log::*;
+use rustc_hir::definitions::DefPath;
+use rustc_hir::Item;
+use rustc_hir::ItemId;
 use rustc_middle::hir::map::Map;
 use rustc_middle::ty;
 use rustc_middle::ty::TyCtxt;
-use rustc_span::def_id::LocalDefId;
+use rustc_span::def_id::{DefId, LocalDefId};
+use rustc_span::symbol::Ident;
 use smallvec::SmallVec;
+
+/// The identifier of the "std" namespace equivalent for the project.
+pub const STD_NAME: &str = "permute";
+
+/// Ease paths creation.
+macro_rules! path {
+    ($(::$el:ident)*) => {
+        &[STD_NAME, $(stringify!($el),)*]
+    };
+}
+
+/// The segments for the path for Sink trait to be found in the "std" equivalent namespace.
+pub const SINK_TRAIT_PATH: &[&str] = path!(::Sink);
+
+/// The segments for the path for Source trait to be found in the "std" equivalent namespace.
+pub const SOURCE_TRAIT_PATH: &[&str] = path!(::Source);
 
 /// Ensure that there are no loops in the code.
 /// This, however, does not check for recursion.
@@ -257,10 +278,12 @@ pub fn no_recursion(tcx: TyCtxt) -> Result<(), Vec<Recursion>> {
 
 /// Find all public types in the HIR. These can be
 /// later used to be registered into the frontend context.
-pub fn types(tcx: TyCtxt) -> Vec<CompactString> {
+pub fn type_ids(tcx: TyCtxt) -> Vec<DefId> {
     let items = tcx.hir_crate_items(()).free_items();
     let visibilities = tcx.effective_visibilities(());
-    let adt_items = items.map(|def_id| tcx.hir().item(def_id)).filter(|i| i.is_adt());
+    let adt_items = items
+        .map(|def_id| tcx.hir().item(def_id))
+        .filter(|i| i.is_adt());
 
     let mut vec = SmallVec::<[_; 128]>::new();
 
@@ -268,9 +291,81 @@ pub fn types(tcx: TyCtxt) -> Vec<CompactString> {
         let id = item.hir_id().as_owner().unwrap().def_id;
         if visibilities.is_directly_public(id) {
             println!("{:?}", item.ident);
-            vec.push(tcx.def_path(id.into()).to_string_no_crate_verbose().into());
+            vec.push(id.into());
         }
     }
 
     vec.into_vec()
+}
+
+pub fn types(tcx: TyCtxt) -> Vec<DefPath> {
+    type_ids(tcx)
+        .into_iter()
+        .map(|id| tcx.def_path(id))
+        .collect()
+}
+
+/// Collect all "impl"s found in the project files.
+pub fn impls(tcx: TyCtxt) -> Vec<ItemId> {
+    let impl_items = tcx.hir_crate_items(()).free_items();
+    let impl_items = impl_items
+        .map(|item_id| tcx.hir().item(item_id))
+        .filter_map(|item| {
+            if let rustc_hir::ItemKind::Impl(_) = &item.kind {
+                trace!("Found impl `{}`", item.ident.as_str());
+                Some(item.item_id())
+            } else {
+                trace!("Not an impl `{}`", item.ident.as_str());
+                None
+            }
+        });
+
+    let mut vec = SmallVec::<[_; 128]>::new();
+    for item in impl_items {
+        vec.push(item.into());
+    }
+    vec.into_vec()
+}
+
+/// Collect all sinks found in the project files.
+pub fn sinks(tcx: TyCtxt) -> Vec<DefPath> {
+    // Find all types that implement "trait Sink".
+    let mut acc = SmallVec::<[_; 32]>::new();
+    let items = impls(tcx);
+    for item_id in items {
+        let item = tcx.hir().item(item_id);
+        let name = item.ident.as_str();
+        if is_impl_sink_trait(tcx, item_id) {
+            trace!("Found sink impl `{name}`");
+            acc.push(tcx.def_path(item.owner_id.to_def_id()));
+        } else {
+            trace!("Not a sink impl `{name}`");
+        }
+    }
+
+    acc.into_vec()
+}
+
+/// Collect all sources found in the project files.
+pub fn sources() -> Vec<DefPath> {
+    todo!()
+}
+
+/// Whether given item is an implementation of the Sink trait.
+fn is_impl_sink_trait(tcx: TyCtxt, item_id: ItemId) -> bool {
+    if let rustc_hir::ItemKind::Impl(imp) = &tcx.hir().item(item_id).kind {
+        if let Some(of_trait) = imp.of_trait {
+            if let Some(def_id) = of_trait.trait_def_id() {
+                return is_sink_trait_path(&tcx.def_path(def_id));
+            }
+        }
+    }
+    false
+}
+
+/// Whether given path is the Sink trait path.
+fn is_sink_trait_path(path: &DefPath) -> bool {
+    let segs = path.data.iter().map(|data| data.data.get_opt_name().map(|v| v.to_ident_string()));
+    trace!("Is sink trait path? {}", segs.clone().map(|v| v.unwrap_or_default()).join("::"));
+    segs.zip(SINK_TRAIT_PATH).all(|(a, b)| a.as_ref().map(|v| v.as_str()) == Some(*b))
 }
