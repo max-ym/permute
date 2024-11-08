@@ -120,7 +120,6 @@ impl T for S {}
             // Analyze the program and inspect the types of definitions.
             queries.global_ctxt().unwrap().enter(|tcx| {
                 let hir = tcx.hir();
-                sinks(tcx);
                 let none_forbidden_loops = no_forbidden_loops(hir);
                 if none_forbidden_loops {
                     println!("No forbidden loops found.");

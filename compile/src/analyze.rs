@@ -327,28 +327,45 @@ pub fn impls(tcx: TyCtxt) -> Vec<ItemId> {
     vec.into_vec()
 }
 
-/// Collect all sinks found in the project files.
-pub fn sinks(tcx: TyCtxt) -> Vec<DefPath> {
-    // Find all types that implement "trait Sink".
-    let mut acc = SmallVec::<[_; 32]>::new();
-    let items = impls(tcx);
-    for item_id in items {
-        let item = tcx.hir().item(item_id);
-        let name = item.ident.as_str();
-        if is_impl_sink_trait(tcx, item_id) {
-            trace!("Found sink impl `{name}`");
-            acc.push(tcx.def_path(item.owner_id.to_def_id()));
-        } else {
-            trace!("Not a sink impl `{name}`");
+pub struct SinksAndSources {
+    pub sinks: Vec<DefId>,
+    pub sources: Vec<DefId>,
+}
+
+impl SinksAndSources {
+    /// Collect all sinks and sources from the project.
+    pub fn collect_from(tcx: TyCtxt) -> Self {
+        let mut sinks = SmallVec::<[_; 32]>::new();
+        let mut sources = SmallVec::<[_; 32]>::new();
+
+        for item_id in impls(tcx) {
+            let item = tcx.hir().item(item_id);
+            let name = item.ident.as_str();
+            if is_impl_sink_trait(tcx, item_id) {
+                trace!("Found sink impl `{name}`");
+                sinks.push(item.owner_id.to_def_id());
+            } else if is_impl_source_trait(tcx, item_id) {
+                trace!("Found source impl `{name}`");
+                sources.push(item.owner_id.to_def_id());
+            } else {
+                trace!("Not a sink or source impl `{name}`");
+            }
+        }
+
+        SinksAndSources {
+            sinks: sinks.into_vec(),
+            sources: sources.into_vec(),
         }
     }
 
-    acc.into_vec()
-}
-
-/// Collect all sources found in the project files.
-pub fn sources() -> Vec<DefPath> {
-    todo!()
+    /// Filter out all items that are not in the given slice.
+    /// Can be used to filter out items that are not in the project or
+    /// should be ignored for some other reason. E.g. this can be used to
+    /// only retain public items.
+    pub fn filter_not_in(&mut self, slice: &[DefId]) {
+        self.sinks.retain(|sink| !slice.contains(sink));
+        self.sources.retain(|source| !slice.contains(source));
+    }
 }
 
 /// Whether given item is an implementation of the Sink trait.
@@ -365,7 +382,40 @@ fn is_impl_sink_trait(tcx: TyCtxt, item_id: ItemId) -> bool {
 
 /// Whether given path is the Sink trait path.
 fn is_sink_trait_path(path: &DefPath) -> bool {
-    let segs = path.data.iter().map(|data| data.data.get_opt_name().map(|v| v.to_ident_string()));
-    trace!("Is sink trait path? {}", segs.clone().map(|v| v.unwrap_or_default()).join("::"));
-    segs.zip(SINK_TRAIT_PATH).all(|(a, b)| a.as_ref().map(|v| v.as_str()) == Some(*b))
+    let segs = path
+        .data
+        .iter()
+        .map(|data| data.data.get_opt_name().map(|v| v.to_ident_string()));
+    trace!(
+        "Is sink trait path? {}",
+        segs.clone().map(|v| v.unwrap_or_default()).join("::")
+    );
+    segs.zip(SINK_TRAIT_PATH)
+        .all(|(a, b)| a.as_ref().map(|v| v.as_str()) == Some(*b))
+}
+
+/// Whether given path is the Source trait path.
+fn is_source_trait_path(path: &DefPath) -> bool {
+    let segs = path
+        .data
+        .iter()
+        .map(|data| data.data.get_opt_name().map(|v| v.to_ident_string()));
+    trace!(
+        "Is source trait path? {}",
+        segs.clone().map(|v| v.unwrap_or_default()).join("::")
+    );
+    segs.zip(SOURCE_TRAIT_PATH)
+        .all(|(a, b)| a.as_ref().map(|v| v.as_str()) == Some(*b))
+}
+
+/// Whether given item is an implementation of the Source trait.
+fn is_impl_source_trait(tcx: TyCtxt, item_id: ItemId) -> bool {
+    if let rustc_hir::ItemKind::Impl(imp) = &tcx.hir().item(item_id).kind {
+        if let Some(of_trait) = imp.of_trait {
+            if let Some(def_id) = of_trait.trait_def_id() {
+                return is_source_trait_path(&tcx.def_path(def_id));
+            }
+        }
+    }
+    false
 }

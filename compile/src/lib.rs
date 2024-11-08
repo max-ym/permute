@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use smallvec::SmallVec;
 
 extern crate rustc_driver;
@@ -23,9 +23,25 @@ extern crate rustc_middle;
 
 pub mod analyze;
 
+pub type ItemId = u32;
+
+#[derive(Debug)]
 pub struct ProjectContent {
     /// Public types that are accessible in the configuration files.
-    pub pub_types: Vec<CompactString>,
+    pub pub_types: Vec<ItemPath>,
+
+    /// Public sinks that are accessible in the configuration files.
+    /// ID into [pub_types].
+    pub sinks: Vec<ItemId>,
+
+    /// Public sources that are accessible in the configuration files.
+    /// ID into [pub_types].
+    pub sources: Vec<ItemId>,
+}
+
+#[derive(Debug)]
+pub struct ItemPath {
+    pub segments: Vec<CompactString>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -88,8 +104,15 @@ impl ProjectContent {
             arr.into_vec()
         };
 
-        let pub_types = pub_types(main, other_files)?;
-        Ok(ProjectContent { pub_types })
+        run_analyze(main, other_files)
+    }
+
+    pub fn sinks(&self) -> impl Iterator<Item = &ItemPath> {
+        self.sinks.iter().map(|id| &self.pub_types[*id as usize])
+    }
+
+    pub fn sources(&self) -> impl Iterator<Item = &ItemPath> {
+        self.sources.iter().map(|id| &self.pub_types[*id as usize])
     }
 }
 
@@ -171,10 +194,10 @@ impl rustc_span::source_map::FileLoader for RsFileLoader {
     }
 }
 
-fn pub_types(
+fn run_analyze(
     main: String,
     other_files: Vec<RsFile>,
-) -> Result<Vec<CompactString>, ProjectContentError> {
+) -> Result<ProjectContent, ProjectContentError> {
     use analyze::*;
     use rustc_errors::registry;
     use rustc_hash::FxHashMap;
@@ -257,10 +280,46 @@ fn pub_types(
                     }
                 }
 
-                Ok(types(tcx)
+                let pub_types = type_ids(tcx);
+                let sinks_and_sources = {
+                    let mut val = SinksAndSources::collect_from(tcx);
+                    val.filter_not_in(pub_types.as_slice());
+                    val
+                };
+
+                let sinks = sinks_and_sources
+                    .sinks
+                    .iter()
+                    .map(|id| {
+                        pub_types.iter().position(|v| v == id).expect(
+                            "should be present as we've got the IDs in the same compilation process",
+                        ) as ItemId
+                    })
+                    .collect();
+                let sources = sinks_and_sources
+                    .sources
+                    .iter()
+                    .map(|id| {
+                        pub_types.iter().position(|v| v == id).expect(
+                            "should be present as we've got the IDs in the same compilation process",
+                        ) as ItemId
+                    })
+                    .collect();
+
+                let pub_type_paths = pub_types
                     .into_iter()
-                    .map(|v| v.to_string_no_crate_verbose().into())
-                    .collect())
+                    .map(|id| {
+                        let path = tcx.def_path(id);
+                        let segments = path.data.iter().map(|s| s.to_compact_string()).collect();
+                        ItemPath { segments }
+                    })
+                    .collect();
+
+                Ok(ProjectContent {
+                    pub_types: pub_type_paths,
+                    sinks,
+                    sources,
+                })
             })
         })
     })
