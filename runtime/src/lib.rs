@@ -26,7 +26,7 @@ pub trait Source {
     fn next(&mut self) -> Option<Result<Self::Item, Self::Error>>;
 }
 
-impl<I, E> Iterator for dyn Source<Item = I, Error = E> {
+impl<I, E> std::iter::Iterator for dyn Source<Item = I, Error = E> {
     type Item = Result<I, E>;
 
     fn next(&mut self) -> Option<Self::Item> {
