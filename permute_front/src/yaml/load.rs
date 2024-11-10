@@ -55,6 +55,9 @@ pub enum LoadError {
 
     #[error(transparent)]
     AddParam(#[from] crate::context::AddParamErr),
+
+    #[error("Error loading Rust files. {0}")]
+    RustError(#[from] compile::ProjectContentError),
 }
 
 /// Error during loading of the main file.
@@ -121,6 +124,10 @@ impl LoadProjectDir<'_> {
         let sinks = sinks.into_iter().map(|v| v.expect(EXPECT_NO_ERR));
         let srcs = srcs.into_iter().map(|v| v.expect(EXPECT_NO_ERR));
 
+        info!("Load Rust files");
+        let rust = compile::ProjectContent::load_from_project_dir(self.path);
+        let rust = rust.map_err(|e| errors.push(e.into())).ok();
+
         info!("Creating new context");
         let ctx = Ctx::new(main.name().into(), Some(main.explain().into()));
         let mut ctx = match ctx {
@@ -131,6 +138,25 @@ impl LoadProjectDir<'_> {
                 return Err(errors.into_vec());
             }
         };
+
+        // Add rust first as it can be used in the bindings.
+        info!("Add Rust items to the context");
+        if let Some(rust) = rust {
+            for sink in rust.sinks() {
+                trace!("Add native sink: {sink}");
+                if let Err(e) = ctx.add_native_sink(sink) {
+                    error!("Error adding native sink to the context. {e}");
+                    errors.push(e.into())
+                }
+            }
+            for source in rust.sources() {
+                trace!("Add native source: {source}");
+                if let Err(e) = ctx.add_native_source(source) {
+                    error!("Error adding native source to the context. {e}");
+                    errors.push(e.into())
+                }
+            }
+        }
 
         info!("Add sinks to the context");
         for sink in sinks {

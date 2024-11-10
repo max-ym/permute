@@ -1,5 +1,5 @@
 use crate::yaml::hir;
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use hashbrown::HashMap;
 use log::*;
 use smallvec::SmallVec;
@@ -28,9 +28,13 @@ pub struct Ctx {
     sinks_bindings: Vec<Binding>,
 
     /// Parameter values for sink bindings. Key is a tuple of sink identifier and parameter name.
+    /// It also stores initialization expressions for native sinks, in this case
+    /// [ParamKey] part of the key is blank.
     sink_params: HashMap<(IdentId, ParamKey), syn::Expr>,
 
     /// Filter values for source bindings. Key is a tuple of source identifier and parameter name.
+    /// It also stores initialization expressions for native sources, in this case
+    /// [ParamKey] part of the key is blank.
     src_filters: HashMap<(IdentId, ParamKey), syn::Expr>,
 
     /// Pipes that connect sources to sinks.
@@ -59,6 +63,21 @@ pub enum AddParamErr {
 
     #[error("Parameter {0} already set to `{1:?}`")]
     AlreadySet(ParamKey, syn::Expr),
+
+    #[error("Cannot add parameter to native item. {0}")]
+    Native(#[from] UnexpectedNative),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AddInitErr {
+    #[error("Item with the name {0} not found")]
+    DestNotFound(CompactString),
+
+    #[error("Item {0} already initialized with `{1:?}`")]
+    AlreadySet(ParamKey, syn::Expr),
+
+    #[error("Expected native item `{0}` to attach initializer, but it instead has YAML origin.")]
+    ExpectNative(CompactString),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -68,7 +87,14 @@ pub enum AddBindingErr {
 
     #[error("Binding target with the name {0} not found")]
     NotFound(CompactString),
+
+    #[error(transparent)]
+    Native(#[from] UnexpectedNative),
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("Expected YAML origin but found native item `{0}`.")]
+pub struct UnexpectedNative(pub CompactString);
 
 impl Ctx {
     pub fn new(
@@ -119,11 +145,19 @@ impl Ctx {
         })
     }
 
+    fn sink_with_id(&self, sink: &str) -> Option<(&Sink, IdentId)> {
+        self.sink_id(sink).map(|v| (&self.sinks[v], v))
+    }
+
     fn source_id(&self, src: &str) -> Option<IdentId> {
         self.srcs.iter().position(|s| s.name() == src).map(|v| {
             trace!("Found source with name `{src}` at index {v}");
             v
         })
+    }
+
+    fn source_with_id(&self, src: &str) -> Option<(&DataSource, IdentId)> {
+        self.source_id(src).map(|v| (&self.srcs[v], v))
     }
 
     pub fn add_source(&mut self, src: impl Into<DataSource>) -> Result<(), AddSourceErr> {
@@ -174,12 +208,34 @@ impl Ctx {
             .map(|(src, sink)| (&self.srcs[src], &self.sinks[sink]))
     }
 
-    pub fn source_binding(&self, name: &str) -> Option<IdentId> {
-        self.srcs_bindings.iter().position(|b| b.name == name)
+    /// Get the source binding by name. Return error if binding is native.
+    pub fn yaml_source_binding(&self, name: &str) -> Result<Option<IdentId>, UnexpectedNative> {
+        let binding = self
+            .srcs_bindings
+            .iter()
+            .find(|b| b.name == name)
+            .map(|v| v.target);
+        if let Some(binding) = binding {
+            if self.srcs[binding].is_native() {
+                return Err(UnexpectedNative(name.to_compact_string()));
+            }
+        }
+        Ok(binding)
     }
 
-    pub fn sink_binding(&self, name: &str) -> Option<IdentId> {
-        self.sinks_bindings.iter().position(|b| b.name == name)
+    /// Get the sink binding by name. Return error if binding is native.
+    pub fn yaml_sink_binding(&self, name: &str) -> Result<Option<IdentId>, UnexpectedNative> {
+        let binding = self
+            .sinks_bindings
+            .iter()
+            .find(|b| b.name == name)
+            .map(|v| v.target);
+        if let Some(binding) = binding {
+            if self.sinks[binding].is_native() {
+                return Err(UnexpectedNative(name.to_compact_string()));
+            }
+        }
+        Ok(binding)
     }
 
     pub fn add_source_binding(
@@ -192,7 +248,7 @@ impl Ctx {
             .ok_or_else(|| AddBindingErr::NotFound(src.into()))?;
 
         // Check if the binding with the same name already exists.
-        if self.source_binding(&name).is_some() {
+        if self.yaml_source_binding(&name)?.is_some() {
             return Err(AddBindingErr::NameExists(name));
         }
 
@@ -215,7 +271,7 @@ impl Ctx {
             .ok_or_else(|| AddBindingErr::NotFound(sink.into()))?;
 
         // Check if the binding with the same name already exists.
-        if self.sink_binding(&name).is_some() {
+        if self.yaml_sink_binding(&name)?.is_some() {
             return Err(AddBindingErr::NameExists(name));
         }
 
@@ -241,6 +297,30 @@ impl Ctx {
         }
     }
 
+    /// Add a native sink to the context. These come from Rust.
+    pub fn add_native_sink(&mut self, item_path: &compile::ItemPath) -> Result<(), AddSinkErr> {
+        self.add_sink(Sink {
+            name: item_path.to_compact_string(),
+            is_native: true,
+            explain: Default::default(),
+            params: HashMap::new(),
+            checks: Vec::new(),
+        })
+    }
+
+    /// Add a native source to the context. These come from Rust.
+    pub fn add_native_source(&mut self, item_path: &compile::ItemPath) -> Result<(), AddSourceErr> {
+        self.add_source(DataSource {
+            name: item_path.to_compact_string(),
+            is_native: true,
+            explain: Default::default(),
+            filters: HashMap::new(),
+            columns: Vec::new(),
+            filter_checks: Vec::new(),
+            column_checks: Vec::new(),
+        })
+    }
+
     /// Add a parameter value to the sink.
     // See the comment on Clippy in the `add_param` method.
     #[allow(clippy::result_large_err)]
@@ -251,7 +331,7 @@ impl Ctx {
         value: syn::Expr,
     ) -> Result<(), AddParamErr> {
         let sink_bind_idx = self
-            .sink_binding(sink_binding_name)
+            .yaml_sink_binding(sink_binding_name)?
             .ok_or_else(|| AddParamErr::DestNotFound(sink_binding_name.into()))?;
 
         debug!("Add parameter `{param_name}` to sink `{sink_binding_name}`");
@@ -278,7 +358,7 @@ impl Ctx {
         value: syn::Expr,
     ) -> Result<(), AddParamErr> {
         let src_bind_idx = self
-            .source_binding(src_name)
+            .yaml_source_binding(src_name)?
             .ok_or_else(|| AddParamErr::DestNotFound(src_name.into()))?;
 
         debug!("Add filter `{filter_name}` to source `{src_name}`");
@@ -313,6 +393,30 @@ impl Ctx {
             self.add_src_filter(sink_or_src_binding_name, param, value)
         }
     }
+
+    /// Add a native sink/source initializer to the context.
+    pub fn add_native_init(
+        &mut self,
+        sink_or_src_binding_name: &str,
+        expr: syn::Expr,
+    ) -> Result<(), AddInitErr> {
+        debug!("Add native init expression");
+        macro_rules! try_add {
+            ($name:ident, $map:ident) => {
+                if let Some((bind, id)) = self.$name(sink_or_src_binding_name) {
+                    return if bind.is_native() {
+                        self.$map.insert((id, ParamKey::new()), expr);
+                        Ok(())
+                    } else {
+                        Err(AddInitErr::ExpectNative(sink_or_src_binding_name.into()))
+                    };
+                }
+            };
+        }
+        try_add!(sink_with_id, sink_params);
+        try_add!(source_with_id, src_filters);
+        Err(AddInitErr::DestNotFound(sink_or_src_binding_name.into()))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -339,6 +443,10 @@ pub enum AddPipeErr {
 pub struct DataSource {
     /// Identifier name for this data source. Cannot be empty. Is valid Rust identifier.
     name: CompactString,
+
+    /// Whether this source comes from YAML configuration or from
+    /// a native Rust code.
+    is_native: bool,
 
     /// User comment about this source. Empty string means no comment.
     explain: CompactString,
@@ -387,12 +495,17 @@ impl DataSource {
     pub fn column_checks(&self) -> &[ExplainExpr] {
         &self.column_checks
     }
+
+    pub fn is_native(&self) -> bool {
+        self.is_native
+    }
 }
 
 impl From<hir::Source> for DataSource {
     fn from(src: hir::Source) -> Self {
         Self {
             name: src.name,
+            is_native: false,
             explain: src.explain,
             filters: src
                 .filters
@@ -542,6 +655,10 @@ pub struct Sink {
     /// Name of the sink. Cannot be empty.
     name: CompactString,
 
+    /// Whether this sink comes from YAML configuration or from
+    /// a native Rust code.
+    is_native: bool,
+
     /// User comment about this sink. Empty string means no comment.
     explain: CompactString,
 
@@ -573,6 +690,10 @@ impl Sink {
             Some(&self.explain)
         }
     }
+
+    pub fn is_native(&self) -> bool {
+        self.is_native
+    }
 }
 
 impl From<hir::Sink> for Sink {
@@ -580,6 +701,7 @@ impl From<hir::Sink> for Sink {
         Self {
             name: sink.name,
             explain: sink.explain,
+            is_native: false,
             params: sink
                 .params
                 .into_iter()

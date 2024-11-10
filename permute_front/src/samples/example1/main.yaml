@@ -23,5 +23,5 @@ let:
   feed:
     # Since this time is defined in Rust code, we don't pass the parameters, but
     # instead use inlined Rust code to create the object.
-    ee_to_csv::Ee2Csv: |
-      ee_to_csv::Ee2Csv::new(csv) // Use initialized `csv` binding from above.
+    crate::ee_to_csv::Ee2Csv: |
+      crate::ee_to_csv::Ee2Csv::new(csv) // Use initialized `csv` binding from above.

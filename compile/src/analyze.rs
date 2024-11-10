@@ -1,14 +1,11 @@
-use compact_str::CompactString;
 use itertools::Itertools;
 use log::*;
 use rustc_hir::definitions::DefPath;
-use rustc_hir::Item;
 use rustc_hir::ItemId;
 use rustc_middle::hir::map::Map;
 use rustc_middle::ty;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::def_id::{DefId, LocalDefId};
-use rustc_span::symbol::Ident;
 use smallvec::SmallVec;
 
 /// The identifier of the "std" namespace equivalent for the project.

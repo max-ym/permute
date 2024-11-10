@@ -44,6 +44,12 @@ pub struct ItemPath {
     pub segments: Vec<CompactString>,
 }
 
+impl fmt::Display for ItemPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.segments.join("::"))
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectContentError {
     #[error(transparent)]
@@ -89,7 +95,13 @@ impl ProjectContent {
                 .into_iter()
                 .map(|path| {
                     let content = std::fs::read_to_string(&path)?;
-                    Ok(RsFile { path, content })
+                    let relpath = path.strip_prefix(project_dir).expect(
+                        "path is inside the project directory and should have folder's prefix",
+                    );
+                    Ok(RsFile {
+                        path: relpath.to_path_buf(),
+                        content,
+                    })
                 })
                 .collect();
 
@@ -166,6 +178,7 @@ fn fake_main_for(files: &[PathBuf]) -> String {
 }
 
 struct RsFile {
+    /// Relative path to a rust file in the project directory.
     path: PathBuf,
     content: String,
 }
