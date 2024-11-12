@@ -124,10 +124,6 @@ impl LoadProjectDir<'_> {
         let sinks = sinks.into_iter().map(|v| v.expect(EXPECT_NO_ERR));
         let srcs = srcs.into_iter().map(|v| v.expect(EXPECT_NO_ERR));
 
-        info!("Load Rust files");
-        let rust = compile::ProjectContent::load_from_project_dir(self.path);
-        let rust = rust.map_err(|e| errors.push(e.into())).ok();
-
         info!("Creating new context");
         let ctx = Ctx::new(main.name().into(), Some(main.explain().into()));
         let mut ctx = match ctx {
@@ -138,6 +134,46 @@ impl LoadProjectDir<'_> {
                 return Err(errors.into_vec());
             }
         };
+
+        info!("Add sinks to the context");
+        for sink in sinks {
+            if let Err(e) = ctx.add_sink(sink) {
+                error!("Error adding sink to the context. {e}");
+                errors.push(e.into())
+            }
+        }
+        info!("Add sources to the context");
+        trace!("Sources count: {}", srcs.len());
+        for src in srcs {
+            if let Err(e) = ctx.add_source(src) {
+                error!("Error adding source to the context. {e}");
+                errors.push(e.into())
+            }
+        }
+
+        info!("Generate Rust code for YAML sources and sinks");
+        let generated = {
+            use crate::context::codegen;
+            use quote::{quote, TokenStreamExt};
+
+            let mut tokens = quote! {};
+
+            info!("Generating sources");
+            for src in ctx.sources() {
+                tokens.append_all(codegen::gen_data_src(src));
+            }
+            info!("Generating sinks");
+            for sink in ctx.sinks() {
+                tokens.append_all(codegen::gen_data_sink(sink));
+            }
+
+            info!("Generator main function finished");
+            tokens
+        };
+
+        info!("Load Rust files");
+        let rust = compile::ProjectContent::load_from_project_dir(self.path, generated);
+        let rust = rust.map_err(|e| errors.push(e.into())).ok();
 
         // Add rust first as it can be used in the bindings.
         info!("Add Rust items to the context");
@@ -155,22 +191,6 @@ impl LoadProjectDir<'_> {
                     error!("Error adding native source to the context. {e}");
                     errors.push(e.into())
                 }
-            }
-        }
-
-        info!("Add sinks to the context");
-        for sink in sinks {
-            if let Err(e) = ctx.add_sink(sink) {
-                error!("Error adding sink to the context. {e}");
-                errors.push(e.into())
-            }
-        }
-        info!("Add sources to the context");
-        trace!("Sources count: {}", srcs.len());
-        for src in srcs {
-            if let Err(e) = ctx.add_source(src) {
-                error!("Error adding source to the context. {e}");
-                errors.push(e.into())
             }
         }
 

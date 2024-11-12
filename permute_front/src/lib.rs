@@ -29,9 +29,11 @@ fn setup_logger() {
                     .error(fern::colors::Color::Red);
 
                 out.finish(format_args!(
-                    "{} [{}] {}",
+                    "{} [{} {}{}] {}",
                     humantime::format_duration(START_TIME.get().unwrap().elapsed()),
                     colors.color(record.level()),
+                    record.file().unwrap_or_default(),
+                    record.line().map(|l| format!(":{}", l)).unwrap_or_default(),
                     message
                 ))
             })

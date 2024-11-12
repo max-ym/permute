@@ -14,6 +14,7 @@ permute:
   use:
     - crate::monetary::Monetary # Example of type `Monetary` import from another in-project file
     - chrono::NaiveDate # Example of type `NaiveDate` import from external crate
+    - std::any::Any
 
 filters:
   date_from:

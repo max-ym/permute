@@ -1,6 +1,8 @@
 use crate::EmploymentRecord;
 use crate::Csv;
 
+use serde::Serialize;
+
 /// Wrapper sink to feed employment records to a CSV file.
 pub struct Ee2Csv {
     sink: Csv,
@@ -14,7 +16,7 @@ impl Ee2Csv {
 
 /// Record to be written to the CSV file.
 /// Derive `RecToVec` to convert the record to a vector of strings.
-#[derive(serde::Serialize)]
+#[derive(Serialize)]
 pub struct Record {
     #[serde(rename = "#")]
     rec_num: u32,

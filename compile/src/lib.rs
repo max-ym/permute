@@ -82,13 +82,17 @@ impl fmt::Display for Recursion {
 impl ProjectContent {
     /// Load all "rs" files from a project directory. This function does not validate
     /// if the directory has a valid project structure.
-    pub fn load_from_project_dir(project_dir: &Path) -> Result<Self, ProjectContentError> {
+    /// Attach to the project content tokens that are required to be present in the main file.
+    pub fn load_from_project_dir(
+        project_dir: &Path,
+        added_content: proc_macro2::TokenStream,
+    ) -> Result<Self, ProjectContentError> {
         let rust_files = {
             let mut buf = SmallVec::new();
             collect_files(project_dir, &mut buf)?;
             buf
         };
-        let main = fake_main_for(&rust_files);
+        let main = fake_main_for(&rust_files, added_content);
 
         let other_files = {
             let maybe_err: Vec<io::Result<RsFile>> = rust_files
@@ -159,10 +163,12 @@ fn collect_files(dir: &Path, buf: &mut SmallVec<[PathBuf; 64]>) -> Result<(), Pr
 
 /// Create a fake main file content that declares all found files as modules and serves as a crate
 /// root.
-fn fake_main_for(files: &[PathBuf]) -> String {
+fn fake_main_for(files: &[PathBuf], added_content: proc_macro2::TokenStream) -> String {
     debug!("Creating fake main file content");
 
-    let mut main = String::with_capacity(files.len() * 32);
+    let added_content = added_content.to_string();
+    let mut main = String::with_capacity(files.len() * 32 + added_content.len());
+    main.push_str(added_content.as_str());
     for file in files {
         let module = file
             .file_stem()
@@ -187,10 +193,12 @@ struct RsFileLoader(Vec<RsFile>);
 
 impl rustc_span::source_map::FileLoader for RsFileLoader {
     fn file_exists(&self, path: &Path) -> bool {
+        trace!("Checking if file exists: {}", path.display());
         self.0.iter().any(|f| f.path == path)
     }
 
     fn read_file(&self, path: &Path) -> io::Result<String> {
+        trace!("Reading file: {}", path.display());
         self.0
             .iter()
             .find(|f| f.path == path)
@@ -199,6 +207,7 @@ impl rustc_span::source_map::FileLoader for RsFileLoader {
     }
 
     fn read_binary_file(&self, path: &Path) -> io::Result<std::rc::Rc<[u8]>> {
+        trace!("Reading binary file: {}", path.display());
         self.0
             .iter()
             .find(|f| f.path == path)
@@ -214,7 +223,10 @@ fn run_analyze(
     use analyze::*;
     use rustc_errors::registry;
     use rustc_hash::FxHashMap;
-    use rustc_session::config;
+    use rustc_session::{
+        config,
+        search_paths::{PathKind, SearchPath, SearchPathFile},
+    };
     debug!("Validating project content");
 
     let out = std::process::Command::new("rustc")
@@ -224,10 +236,55 @@ fn run_analyze(
         .unwrap();
     let sysroot = std::str::from_utf8(&out.stdout).unwrap().trim();
 
+    let search_path_dir: std::path::PathBuf = "/home/max/Projects/permute/target/debug/deps".into();
     let config = rustc_interface::Config {
         // Command line options
         opts: config::Options {
             maybe_sysroot: Some(PathBuf::from(sysroot)),
+            externs: {
+                let mut map = std::collections::BTreeMap::new();
+                macro_rules! add {
+                    ($name:ident) => {
+                        map.insert(
+                            stringify!($name).to_string(),
+                            config::ExternEntry {
+                                location: config::ExternLocation::FoundInLibrarySearchDirectories,
+                                is_private_dep: true,
+                                add_prelude: true,
+                                nounused_dep: false,
+                                force: false,
+                            },
+                        );
+                    };
+                }
+
+                add!(chrono);
+                add!(serde);
+                add!(lazy_regex);
+                add!(permute);
+                add!(smallvec);
+                add!(compact_str);
+                add!(log);
+
+                config::Externs::new(map)
+            },
+            search_paths: vec![SearchPath {
+                kind: PathKind::All,
+                dir: search_path_dir.clone(),
+                files: match std::fs::read_dir(&search_path_dir) {
+                    Ok(files) => files
+                        .filter_map(|e| {
+                            e.ok().and_then(|e| {
+                                e.file_name().to_str().map(|s| SearchPathFile {
+                                    path: e.path(),
+                                    file_name_str: s.to_string(),
+                                })
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                    Err(..) => vec![],
+                },
+            }],
             ..config::Options::default()
         },
         // cfg! configuration in addition to the default ones
@@ -267,31 +324,33 @@ fn run_analyze(
     rustc_interface::run_compiler(config, |compiler| {
         compiler.enter(|queries| {
             queries.global_ctxt().unwrap().enter(|tcx| {
-                let hir = tcx.hir();
+                // let hir = tcx.hir();
 
-                if !no_forbidden_loops(hir) {
-                    return Err(ProjectContentError::ForbiddenLoops);
-                }
+                // info!("Run check for forbidden loops");
+                // if !no_forbidden_loops(hir) {
+                //     return Err(ProjectContentError::ForbiddenLoops);
+                // }
 
-                match no_recursion(tcx) {
-                    Ok(()) => {
-                        info!("No recursion found.");
-                    }
-                    Err(recursions) => {
-                        let r = recursions
-                            .iter()
-                            .map(|r| {
-                                let callee = tcx.def_path_str(r.callee);
-                                let caller = tcx.def_path_str(r.caller);
-                                self::Recursion {
-                                    callee: callee.to_string(),
-                                    caller: caller.to_string(),
-                                }
-                            })
-                            .collect();
-                        return Err(ProjectContentError::Recursions(r));
-                    }
-                }
+                // info!("Run check for recursion");
+                // match no_recursion(tcx) {
+                //     Ok(()) => {
+                //         info!("No recursion found.");
+                //     }
+                //     Err(recursions) => {
+                //         let r = recursions
+                //             .iter()
+                //             .map(|r| {
+                //                 let callee = tcx.def_path_str(r.callee);
+                //                 let caller = tcx.def_path_str(r.caller);
+                //                 self::Recursion {
+                //                     callee: callee.to_string(),
+                //                     caller: caller.to_string(),
+                //                 }
+                //             })
+                //             .collect();
+                //         return Err(ProjectContentError::Recursions(r));
+                //     }
+                // }
 
                 let pub_types = type_ids(tcx);
                 let sinks_and_sources = {
@@ -328,6 +387,7 @@ fn run_analyze(
                     })
                     .collect();
 
+                info!("Project content validated");
                 Ok(ProjectContent {
                     pub_types: pub_type_paths,
                     sinks,

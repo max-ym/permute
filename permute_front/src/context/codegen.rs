@@ -38,7 +38,8 @@ pub fn gen_main(ctx: &Ctx) -> TokenStream {
     tokens
 }
 
-fn gen_data_src(src: &DataSource) -> TokenStream {
+/// Generate the data source struct and impls.
+pub fn gen_data_src(src: &DataSource) -> TokenStream {
     let struc = gen_data_src_struc(src);
     let impls = gen_data_src_impls(src);
     quote! {
@@ -48,7 +49,7 @@ fn gen_data_src(src: &DataSource) -> TokenStream {
 }
 
 fn gen_data_src_struc(src: &DataSource) -> TokenStream {
-    let src_name = src.name();
+    let src_name = src.name().ident();
     info!("Generating data source `{src_name}` struct");
 
     let filters = src.filters().iter().map(|(k, v)| {
@@ -67,7 +68,7 @@ fn gen_data_src_struc(src: &DataSource) -> TokenStream {
 }
 
 fn gen_data_src_impls(src: &DataSource) -> TokenStream {
-    let src_name = src.name();
+    let src_name = src.name().ident();
     info!("Generating data source `{src_name}` impls");
 
     let impls = src.filters().iter().map(|(name, _)| {
@@ -139,7 +140,8 @@ fn sink_param_ty(sink: &Sink, param: &str) -> syn::Ident {
     format!("{}_{param}", sink.name()).ident()
 }
 
-fn gen_data_sink(sink: &Sink) -> TokenStream {
+/// Generate the data sink struct and impls.
+pub fn gen_data_sink(sink: &Sink) -> TokenStream {
     let struc = gen_data_sink_struc(sink);
     let impls = gen_data_sink_impls(sink);
     quote! {
@@ -149,7 +151,7 @@ fn gen_data_sink(sink: &Sink) -> TokenStream {
 }
 
 fn gen_data_sink_struc(sink: &Sink) -> TokenStream {
-    let sink_name = sink.name();
+    let sink_name = sink.name().ident();
     info!("Generating data sink `{sink_name}` struct");
 
     let impls = sink.params().iter().map(|(k, v)| {
@@ -219,7 +221,7 @@ fn gen_data_sink_struc(sink: &Sink) -> TokenStream {
 }
 
 fn gen_data_sink_impls(sink: &Sink) -> TokenStream {
-    let sink_name = sink.name();
+    let sink_name = sink.name().ident();
     info!("Generating data sink `{sink_name}` impls");
 
     let impls = sink.params().iter().map(|(name, param)| {

@@ -13,6 +13,8 @@ permute:
   type: sink # This file describes a sink, to which data can be written.
   use:
     - crate::csv_sink::*
+    - chrono::Date
+    - std::any::Any
 
 param:
   path:
