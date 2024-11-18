@@ -168,6 +168,7 @@ fn fake_main_for(files: &[PathBuf], added_content: proc_macro2::TokenStream) -> 
 
     let added_content = added_content.to_string();
     let mut main = String::with_capacity(files.len() * 32 + added_content.len());
+    main.push_str("extern crate serde_derive;\n");
     main.push_str(added_content.as_str());
     for file in files {
         let module = file
@@ -225,7 +226,7 @@ fn run_analyze(
     use rustc_hash::FxHashMap;
     use rustc_session::{
         config,
-        search_paths::{PathKind, SearchPath, SearchPathFile},
+        utils::{CanonicalizedPath, NativeLib, NativeLibKind},
     };
     debug!("Validating project content");
 
@@ -236,55 +237,72 @@ fn run_analyze(
         .unwrap();
     let sysroot = std::str::from_utf8(&out.stdout).unwrap().trim();
 
-    let search_path_dir: std::path::PathBuf = "/home/max/Projects/permute/target/debug/deps".into();
+    let search_path_dir: std::path::PathBuf = "../compile/rlibs".into();
+    assert!(
+        search_path_dir.exists(),
+        "search path directory does not exist"
+    );
+
+    let externs = {
+        const HASH_LEN: usize = 18;
+
+        let mut map = std::collections::BTreeMap::new();
+
+        for entry in std::fs::read_dir(&search_path_dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let filename = path.file_name().unwrap();
+            let ext = path.extension().unwrap_or_default();
+            let filename = filename.to_str().unwrap();
+            let ext = ext.to_str().unwrap_or_default();
+            if ext == "rlib" || ext == "so" {
+                let skip_prefix = "lib".len();
+
+                // Strip off the extension, hash suffix and lib prefix.
+                let strip = &filename[skip_prefix..filename.len() - HASH_LEN - ext.len()];
+                debug!("Registering extern library: {strip} - ({filename})");
+
+                // Upsert the entry.
+                use std::collections::btree_map::Entry;
+                match map.entry(strip.to_string()) {
+                    Entry::Vacant(e) => {
+                        let cfg = config::ExternEntry {
+                            location: config::ExternLocation::ExactPaths({
+                                let mut tree = std::collections::BTreeSet::new();
+                                tree.insert(CanonicalizedPath::new(&path));
+                                tree
+                            }),
+                            is_private_dep: true,
+                            add_prelude: true,
+                            nounused_dep: false,
+                            force: false,
+                        };
+                        e.insert(cfg);
+                    }
+                    Entry::Occupied(mut e) => {
+                        if let config::ExternLocation::ExactPaths(location) =
+                            &mut e.get_mut().location
+                        {
+                            location.insert(CanonicalizedPath::new(&path));
+                        } else {
+                            unreachable!("location is always ExactPaths");
+                        }
+                    }
+                }
+            } else {
+                trace!("Skipping file: {filename}");
+            }
+        }
+
+        config::Externs::new(map)
+    };
+
     let config = rustc_interface::Config {
         // Command line options
         opts: config::Options {
             maybe_sysroot: Some(PathBuf::from(sysroot)),
-            externs: {
-                let mut map = std::collections::BTreeMap::new();
-                macro_rules! add {
-                    ($name:ident) => {
-                        map.insert(
-                            stringify!($name).to_string(),
-                            config::ExternEntry {
-                                location: config::ExternLocation::FoundInLibrarySearchDirectories,
-                                is_private_dep: true,
-                                add_prelude: true,
-                                nounused_dep: false,
-                                force: false,
-                            },
-                        );
-                    };
-                }
-
-                add!(chrono);
-                add!(serde);
-                add!(lazy_regex);
-                add!(permute);
-                add!(smallvec);
-                add!(compact_str);
-                add!(log);
-
-                config::Externs::new(map)
-            },
-            search_paths: vec![SearchPath {
-                kind: PathKind::All,
-                dir: search_path_dir.clone(),
-                files: match std::fs::read_dir(&search_path_dir) {
-                    Ok(files) => files
-                        .filter_map(|e| {
-                            e.ok().and_then(|e| {
-                                e.file_name().to_str().map(|s| SearchPathFile {
-                                    path: e.path(),
-                                    file_name_str: s.to_string(),
-                                })
-                            })
-                        })
-                        .collect::<Vec<_>>(),
-                    Err(..) => vec![],
-                },
-            }],
+            externs,
+            edition: rustc_span::edition::Edition::Edition2021,
             ..config::Options::default()
         },
         // cfg! configuration in addition to the default ones
@@ -324,6 +342,7 @@ fn run_analyze(
     rustc_interface::run_compiler(config, |compiler| {
         compiler.enter(|queries| {
             queries.global_ctxt().unwrap().enter(|tcx| {
+                info!("Started compiler, entered global context");
                 // let hir = tcx.hir();
 
                 // info!("Run check for forbidden loops");
@@ -358,6 +377,7 @@ fn run_analyze(
                     val.filter_not_in(pub_types.as_slice());
                     val
                 };
+                info!("Sinks and sources collected");
 
                 let sinks = sinks_and_sources
                     .sinks
@@ -377,6 +397,7 @@ fn run_analyze(
                         ) as ItemId
                     })
                     .collect();
+                debug!("Collected type IDs of sinks and sources from the compiler context");
 
                 let pub_type_paths = pub_types
                     .into_iter()
@@ -386,6 +407,7 @@ fn run_analyze(
                         ItemPath { segments }
                     })
                     .collect();
+                info!("Public types mapped to paths");
 
                 info!("Project content validated");
                 Ok(ProjectContent {

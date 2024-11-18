@@ -276,6 +276,8 @@ pub fn no_recursion(tcx: TyCtxt) -> Result<(), Vec<Recursion>> {
 /// Find all public types in the HIR. These can be
 /// later used to be registered into the frontend context.
 pub fn type_ids(tcx: TyCtxt) -> Vec<DefId> {
+    info!("Collect public types");
+
     let items = tcx.hir_crate_items(()).free_items();
     let visibilities = tcx.effective_visibilities(());
     let adt_items = items
