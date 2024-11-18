@@ -168,6 +168,7 @@ impl LoadProjectDir<'_> {
             }
 
             info!("Generator main function finished");
+            codegen::trace_printall(&tokens);
             tokens
         };
 

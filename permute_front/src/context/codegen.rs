@@ -253,10 +253,21 @@ impl StrExt for str {
     }
 }
 
-#[cfg(test)]
-mod tests {
+pub fn trace_printall(tokens: &TokenStream) {
+    if log::STATIC_MAX_LEVEL > log::Level::Trace.to_level_filter() {
+        return;
+    }
+
     use rust_format::{Formatter, PrettyPlease};
 
+    let fmt = PrettyPlease::default()
+        .format_str(tokens.to_string())
+        .unwrap();
+    trace!("{fmt}");
+}
+
+#[cfg(test)]
+mod tests {
     use super::*;
 
     #[test]
@@ -265,9 +276,6 @@ mod tests {
         
         let ctx = crate::yaml::load::tests::do_load_project();
         let tokens = gen_main(&ctx);
-        let fmt = PrettyPlease::default()
-            .format_str(tokens.to_string())
-            .unwrap();
-        println!("{fmt}");
+        trace_printall(&tokens);
     }
 }
