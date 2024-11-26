@@ -169,6 +169,14 @@ fn fake_main_for(files: &[PathBuf], added_content: proc_macro2::TokenStream) -> 
     let added_content = added_content.to_string();
     let mut main = String::with_capacity(files.len() * 32 + added_content.len());
     main.push_str("extern crate serde_derive;\n");
+    main.push_str("extern crate serde;\n");
+    main.push_str("extern crate log;\n");
+    main.push_str("extern crate compact_str;\n");
+    main.push_str("extern crate smallvec;\n");
+    main.push_str("extern crate lazy_regex;\n");
+    main.push_str("extern crate chrono;\n");
+    main.push_str("extern crate runtime as permute;\n");
+
     main.push_str(added_content.as_str());
     for file in files {
         let module = file
@@ -255,7 +263,7 @@ fn run_analyze(
             let ext = path.extension().unwrap_or_default();
             let filename = filename.to_str().unwrap();
             let ext = ext.to_str().unwrap_or_default();
-            if ext == "rlib" || ext == "so" {
+            if ext == "rmeta" || ext == "so" {
                 let skip_prefix = "lib".len();
 
                 // Strip off the extension, hash suffix and lib prefix.
@@ -272,7 +280,7 @@ fn run_analyze(
                                 tree.insert(CanonicalizedPath::new(&path));
                                 tree
                             }),
-                            is_private_dep: true,
+                            is_private_dep: false,
                             add_prelude: true,
                             nounused_dep: false,
                             force: false,
@@ -294,15 +302,19 @@ fn run_analyze(
             }
         }
 
+        trace!("Final map: {map:#?}");
+
         config::Externs::new(map)
     };
 
+    use rustc_session::search_paths::PathKind as SearchPathKind;
     let config = rustc_interface::Config {
         // Command line options
         opts: config::Options {
-            maybe_sysroot: Some(PathBuf::from(sysroot)),
+            // maybe_sysroot: Some(PathBuf::from(sysroot)),
             externs,
             edition: rustc_span::edition::Edition::Edition2021,
+            search_paths: vec![new_search_path(SearchPathKind::Dependency, search_path_dir)],
             ..config::Options::default()
         },
         // cfg! configuration in addition to the default ones
@@ -418,4 +430,30 @@ fn run_analyze(
             })
         })
     })
+}
+
+// https://doc.rust-lang.org/beta/nightly-rustc/src/rustc_session/search_paths.rs.html#53-93
+// Remove when we get 'pub fn' in stable.
+fn new_search_path(
+    kind: rustc_session::search_paths::PathKind,
+    dir: PathBuf,
+) -> rustc_session::search_paths::SearchPath {
+    // Get the files within the directory.
+    let files = match std::fs::read_dir(&dir) {
+        Ok(files) => files
+            .filter_map(|e| {
+                e.ok().and_then(|e| {
+                    e.file_name()
+                        .to_str()
+                        .map(|s| rustc_session::search_paths::SearchPathFile {
+                            path: e.path(),
+                            file_name_str: s.to_string(),
+                        })
+                })
+            })
+            .collect::<Vec<_>>(),
+        Err(..) => vec![],
+    };
+
+    rustc_session::search_paths::SearchPath { kind, dir, files }
 }

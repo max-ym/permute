@@ -1,7 +1,0 @@
-# What's this?
-
-A helper project to build rlibs for the `compile` project. Stored artifacts
-then by hand should be copied into `compile` from `target` directory.
-Those are used as `extern crate`s and since there's no Cargo to help us,
-we currently provide our own prebuilt versions of corresponding crates.
-Up until there's more production-ready way that automates this...

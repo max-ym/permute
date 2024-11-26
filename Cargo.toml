@@ -3,5 +3,7 @@ resolver = "2"
 members = [
     "compile",
     "permute_front",
+]
+exclude = [
     "runtime",
 ]

@@ -1,5 +1,0 @@
-# What's this?
-
-This folder contains rlibs that are included into the project during compilation.
-This may later be reworked to load libraries in the other way, but in the sake
-of prototyping and testing, this currently is suitable.
