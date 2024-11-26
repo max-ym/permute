@@ -42,10 +42,20 @@ pub fn gen_main(ctx: &Ctx) -> TokenStream {
 pub fn gen_data_src(src: &DataSource) -> TokenStream {
     let struc = gen_data_src_struc(src);
     let impls = gen_data_src_impls(src);
+    let uses = use_tree_tokens(src.uses());
     quote! {
+        #(#uses)*
         #struc
         #impls
     }
+}
+
+fn use_tree_tokens(uses: &[syn::UseTree]) -> impl Iterator<Item = TokenStream> + '_ {
+    uses.iter().map(|use_tree| {
+        quote! {
+            #use_tree
+        }
+    })
 }
 
 fn gen_data_src_struc(src: &DataSource) -> TokenStream {
@@ -60,6 +70,7 @@ fn gen_data_src_struc(src: &DataSource) -> TokenStream {
         }
     });
     quote! {
+        #[allow(non_camel_case_types)]
         #[derive(Debug)]
         pub struct #src_name {
             #(#filters),*
@@ -106,6 +117,7 @@ fn gen_data_src_impls(src: &DataSource) -> TokenStream {
             }
         });
         quote! {
+            #[allow(non_camel_case_types)]  
             #[derive(Debug)]
             pub struct #fmt_ty(pub #ty);
 
@@ -144,7 +156,9 @@ fn sink_param_ty(sink: &Sink, param: &str) -> syn::Ident {
 pub fn gen_data_sink(sink: &Sink) -> TokenStream {
     let struc = gen_data_sink_struc(sink);
     let impls = gen_data_sink_impls(sink);
+    let uses = use_tree_tokens(sink.uses());
     quote! {
+        #(#uses)*
         #struc
         #impls
     }
@@ -180,6 +194,7 @@ fn gen_data_sink_struc(sink: &Sink) -> TokenStream {
         });
 
         quote! {
+            #[allow(non_camel_case_types)]
             #[derive(Debug)]
             pub struct #name(pub #ty);
 
@@ -211,6 +226,7 @@ fn gen_data_sink_struc(sink: &Sink) -> TokenStream {
     });
 
     quote! {
+        #[allow(non_camel_case_types)]
         #[derive(Debug)]
         pub struct #sink_name {
             #(#params),*

@@ -21,10 +21,10 @@ param:
     type: String
     explain: Path to the CSV file to write to.
   date_fmt:
-    type: impl Fn(Date) -> String # Just like in Rust, trait types can be "dyn"amic or "impl"emented.
+    type: Box<dyn Fn(Date) -> String> # Just like in Rust, trait types can be "dyn"amic or "impl"emented.
     explain: Function to format a date as a string.
   none_fmt:
-    type: impl Fn(&dyn Any) -> String
+    type: Box<dyn Fn(&dyn Any) -> String>
     default: | # Default value is a lambda function.
       |_| String::new()
     explain: Function to format None values of any type.

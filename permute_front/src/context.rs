@@ -305,6 +305,7 @@ impl Ctx {
             explain: Default::default(),
             params: HashMap::new(),
             checks: Vec::new(),
+            uses: Vec::new(),
         })
     }
 
@@ -318,6 +319,7 @@ impl Ctx {
             columns: Vec::new(),
             filter_checks: Vec::new(),
             column_checks: Vec::new(),
+            uses: Vec::new(),
         })
     }
 
@@ -465,6 +467,11 @@ pub struct DataSource {
     /// These are performed during runtime on the source data to ensure data integrity
     /// and conformity to the schema.
     column_checks: Vec<ExplainExpr>,
+
+    /// External types that should be "used" in the generated code, for
+    /// column type resolution. This is in form of "use" syntax tree
+    /// as these expressions can be complex.
+    uses: Vec<syn::UseTree>,
 }
 
 impl DataSource {
@@ -499,6 +506,10 @@ impl DataSource {
     pub fn is_native(&self) -> bool {
         self.is_native
     }
+
+    pub fn uses(&self) -> &[syn::UseTree] {
+        &self.uses
+    }
 }
 
 impl From<hir::Source> for DataSource {
@@ -523,6 +534,7 @@ impl From<hir::Source> for DataSource {
                 .into_iter()
                 .map(ExplainExpr::from)
                 .collect(),
+            uses: src.uses,
         }
     }
 }
@@ -668,6 +680,11 @@ pub struct Sink {
     /// Global checks that are applied to the sink,
     /// and can operate on multiple parameters.
     checks: Vec<ExplainExpr>,
+
+    /// External types that should be "used" in the generated code, for
+    /// param type resolution. This is in form of "use" syntax tree
+    /// as these expressions can be complex.
+    uses: Vec<syn::UseTree>,
 }
 
 impl Sink {
@@ -694,6 +711,10 @@ impl Sink {
     pub fn is_native(&self) -> bool {
         self.is_native
     }
+
+    pub fn uses(&self) -> &[syn::UseTree] {
+        &self.uses
+    }
 }
 
 impl From<hir::Sink> for Sink {
@@ -712,6 +733,7 @@ impl From<hir::Sink> for Sink {
                 .into_iter()
                 .map(ExplainExpr::from)
                 .collect(),
+            uses: sink.uses,
         }
     }
 }
