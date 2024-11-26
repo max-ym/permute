@@ -31,7 +31,7 @@ pub struct Record {
     term_date: Option<chrono::NaiveDate>,
 
     #[serde(rename = "Salary")]
-    salary: crate::Monetary,
+    salary: crate::monetary::Monetary,
 
     #[serde(rename = "Department")]
     dept: Option<String>,

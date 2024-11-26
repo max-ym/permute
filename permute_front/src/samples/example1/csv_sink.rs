@@ -19,5 +19,5 @@ impl RowSequence {
 
 /// Function that transforms input into CSV writeable form and pushes the formatted value
 /// to the writer.
-pub type WriteFn<T> = FnMut(&mut Csv, T);
+pub type WriteFn<T> = FnMut(&mut crate::Csv, T);
 

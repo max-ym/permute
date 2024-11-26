@@ -43,19 +43,21 @@ pub fn gen_data_src(src: &DataSource) -> TokenStream {
     let struc = gen_data_src_struc(src);
     let impls = gen_data_src_impls(src);
     let uses = use_tree_tokens(src.uses());
+    let mod_name = src.name().underscored_ident();
     quote! {
-        #(#uses)*
-        #struc
-        #impls
+        mod #mod_name {
+            #uses
+            #struc
+            #impls
+        }
+        pub use #mod_name::*;
     }
 }
 
-fn use_tree_tokens(uses: &[syn::UseTree]) -> impl Iterator<Item = TokenStream> + '_ {
-    uses.iter().map(|use_tree| {
-        quote! {
-            #use_tree
-        }
-    })
+fn use_tree_tokens(uses: &[syn::UseTree]) -> TokenStream {
+    quote! {
+        #(use #uses;)*
+    }
 }
 
 fn gen_data_src_struc(src: &DataSource) -> TokenStream {
@@ -95,7 +97,15 @@ fn gen_data_src_impls(src: &DataSource) -> TokenStream {
     let fmts = src.filters().iter().map(|(name, v)| {
         let ty = v.ty();
         let fmt_ty = filter_ty(src, name);
-        let explain = v.explain();
+        let explain = if let Some(explain) = v.explain() {
+            quote! {
+                Some(#explain)
+            }
+        } else {
+            quote! {
+                None
+            }
+        };
         let default = if let Some(default) = v.default() {
             quote! {
                 impl Default for #fmt_ty {
@@ -117,7 +127,7 @@ fn gen_data_src_impls(src: &DataSource) -> TokenStream {
             }
         });
         quote! {
-            #[allow(non_camel_case_types)]  
+            #[allow(non_camel_case_types)]
             #[derive(Debug)]
             pub struct #fmt_ty(pub #ty);
 
@@ -157,10 +167,14 @@ pub fn gen_data_sink(sink: &Sink) -> TokenStream {
     let struc = gen_data_sink_struc(sink);
     let impls = gen_data_sink_impls(sink);
     let uses = use_tree_tokens(sink.uses());
+    let mod_name = sink.name().underscored_ident();
     quote! {
-        #(#uses)*
-        #struc
-        #impls
+        mod #mod_name {
+            #uses
+            #struc
+            #impls
+        }
+        pub use #mod_name::*;
     }
 }
 
@@ -261,11 +275,17 @@ fn gen_data_sink_impls(sink: &Sink) -> TokenStream {
 
 trait StrExt {
     fn ident(&self) -> syn::Ident;
+
+    fn underscored_ident(&self) -> syn::Ident;
 }
 
 impl StrExt for str {
     fn ident(&self) -> syn::Ident {
         syn::Ident::new(self, Span::call_site())
+    }
+
+    fn underscored_ident(&self) -> syn::Ident {
+        syn::Ident::new(&format!("_{}", self), Span::call_site())
     }
 }
 
@@ -289,7 +309,7 @@ mod tests {
     #[test]
     fn printall() {
         crate::setup_logger();
-        
+
         let ctx = crate::yaml::load::tests::do_load_project();
         let tokens = gen_main(&ctx);
         trace_printall(&tokens);
