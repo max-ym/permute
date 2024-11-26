@@ -168,13 +168,6 @@ fn fake_main_for(files: &[PathBuf], added_content: proc_macro2::TokenStream) -> 
 
     let added_content = added_content.to_string();
     let mut main = String::with_capacity(files.len() * 32 + added_content.len());
-    main.push_str("extern crate serde_derive;\n");
-    main.push_str("extern crate serde;\n");
-    main.push_str("extern crate log;\n");
-    main.push_str("extern crate compact_str;\n");
-    main.push_str("extern crate smallvec;\n");
-    main.push_str("extern crate lazy_regex;\n");
-    main.push_str("extern crate chrono;\n");
     main.push_str("extern crate runtime as permute;\n");
 
     main.push_str(added_content.as_str());
