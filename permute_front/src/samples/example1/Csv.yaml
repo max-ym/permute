@@ -13,7 +13,7 @@ permute:
   type: sink # This file describes a sink, to which data can be written.
   use:
     - crate::csv_sink::*
-    - chrono::Date
+    - chrono::NaiveDate
     - std::any::Any
 
 param:
@@ -21,7 +21,7 @@ param:
     type: String
     explain: Path to the CSV file to write to.
   date_fmt:
-    type: Box<dyn Fn(Date) -> String> # Just like in Rust, trait types can be "dyn"amic or "impl"emented.
+    type: Box<dyn Fn(NaiveDate) -> String> # Boxed dynamic function.
     explain: Function to format a date as a string.
   none_fmt:
     type: Box<dyn Fn(&dyn Any) -> String>
