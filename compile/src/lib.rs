@@ -295,8 +295,6 @@ fn run_analyze(
             }
         }
 
-        trace!("Final map: {map:#?}");
-
         config::Externs::new(map)
     };
 
@@ -377,12 +375,15 @@ fn run_analyze(
                 // }
 
                 let pub_types = type_ids(tcx);
+                trace!("Public types: {:#?}", pub_types);
                 let sinks_and_sources = {
                     let mut val = SinksAndSources::collect_from(tcx);
                     val.filter_not_in(pub_types.as_slice());
                     val
                 };
                 info!("Sinks and sources collected");
+                trace!("Sinks: {:#?}", sinks_and_sources.sinks);
+                trace!("Sources: {:#?}", sinks_and_sources.sources);
 
                 let sinks = sinks_and_sources
                     .sinks
