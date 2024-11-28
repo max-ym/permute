@@ -9,20 +9,7 @@ use rustc_span::def_id::{DefId, LocalDefId};
 use smallvec::SmallVec;
 
 /// The identifier of the "std" namespace equivalent for the project.
-pub const STD_NAME: &str = "permute";
-
-/// Ease paths creation.
-macro_rules! path {
-    ($(::$el:ident)*) => {
-        &[STD_NAME, $(stringify!($el),)*]
-    };
-}
-
-/// The segments for the path for Sink trait to be found in the "std" equivalent namespace.
-pub const SINK_TRAIT_PATH: &[&str] = path!(::Sink);
-
-/// The segments for the path for Source trait to be found in the "std" equivalent namespace.
-pub const SOURCE_TRAIT_PATH: &[&str] = path!(::Source);
+pub const STD_NAME: &str = "runtime";
 
 /// Ensure that there are no loops in the code.
 /// This, however, does not check for recursion.
@@ -310,8 +297,10 @@ pub fn impls(tcx: TyCtxt) -> Vec<ItemId> {
     let impl_items = impl_items
         .map(|item_id| tcx.hir().item(item_id))
         .filter_map(|item| {
-            if let rustc_hir::ItemKind::Impl(_) = &item.kind {
-                trace!("Found impl `{}`", item.ident.as_str());
+            if let rustc_hir::ItemKind::Impl(imp) = &item.kind {
+                let self_ty = tcx.hir().opt_name(imp.self_ty.hir_id);
+                let self_ty = self_ty.as_ref().map(|v| v.as_str()).unwrap_or_default();
+                trace!("Found impl `{self_ty}`, id: {}", item.hir_id());
                 Some(item.item_id())
             } else {
                 trace!("Not an impl `{}`", item.ident.as_str());
@@ -334,27 +323,23 @@ pub struct SinksAndSources {
 impl SinksAndSources {
     /// Collect all sinks and sources from the project.
     pub fn collect_from(tcx: TyCtxt) -> Self {
-        let mut sinks = SmallVec::<[_; 32]>::new();
-        let mut sources = SmallVec::<[_; 32]>::new();
+        let sink_def_id = sink_trait_def_id(tcx).expect("Sink trait not found");
+        let source_def_id = source_trait_def_id(tcx).expect("Source trait not found");
 
-        for item_id in impls(tcx) {
-            let item = tcx.hir().item(item_id);
-            let name = item.ident.as_str();
-            if is_impl_sink_trait(tcx, item_id) {
-                trace!("Found sink impl `{name}`");
-                sinks.push(item.owner_id.to_def_id());
-            } else if is_impl_source_trait(tcx, item_id) {
-                trace!("Found source impl `{name}`");
-                sources.push(item.owner_id.to_def_id());
-            } else {
-                trace!("Not a sink or source impl `{name}`");
-            }
-        }
+        let sinks = tcx
+            .hir()
+            .trait_impls(sink_def_id)
+            .iter()
+            .map(|v| v.to_def_id())
+            .collect();
+        let sources = tcx
+            .hir()
+            .trait_impls(source_def_id)
+            .iter()
+            .map(|v| v.to_def_id())
+            .collect();
 
-        SinksAndSources {
-            sinks: sinks.into_vec(),
-            sources: sources.into_vec(),
-        }
+        SinksAndSources { sinks, sources }
     }
 
     /// Filter out all items that are not in the given slice.
@@ -367,54 +352,27 @@ impl SinksAndSources {
     }
 }
 
-/// Whether given item is an implementation of the Sink trait.
-fn is_impl_sink_trait(tcx: TyCtxt, item_id: ItemId) -> bool {
-    if let rustc_hir::ItemKind::Impl(imp) = &tcx.hir().item(item_id).kind {
-        if let Some(of_trait) = imp.of_trait {
-            if let Some(def_id) = of_trait.trait_def_id() {
-                return is_sink_trait_path(&tcx.def_path(def_id));
+fn sink_trait_def_id(tcx: TyCtxt) -> Option<DefId> {
+    trait_def_id(tcx, "Sink")
+}
+
+fn source_trait_def_id(tcx: TyCtxt) -> Option<DefId> {
+    trait_def_id(tcx, "Source")
+}
+
+fn trait_def_id(tcx: TyCtxt, key: &str) -> Option<DefId> {
+    for krate in tcx.used_crates(()) {
+        let name = tcx.crate_name(*krate);
+        if name.as_str() == STD_NAME {
+            for tr in tcx.traits(*krate) {
+                if let Some(name) = tcx.opt_item_name(*tr) {
+                    if name.as_str() == key {
+                        return Some(*tr);
+                    }
+                }
             }
+            break;
         }
     }
-    false
-}
-
-/// Whether given path is the Sink trait path.
-fn is_sink_trait_path(path: &DefPath) -> bool {
-    let segs = path
-        .data
-        .iter()
-        .map(|data| data.data.get_opt_name().map(|v| v.to_ident_string()));
-    trace!(
-        "Is sink trait path? {}",
-        segs.clone().map(|v| v.unwrap_or_default()).join("::")
-    );
-    segs.zip(SINK_TRAIT_PATH)
-        .all(|(a, b)| a.as_ref().map(|v| v.as_str()) == Some(*b))
-}
-
-/// Whether given path is the Source trait path.
-fn is_source_trait_path(path: &DefPath) -> bool {
-    let segs = path
-        .data
-        .iter()
-        .map(|data| data.data.get_opt_name().map(|v| v.to_ident_string()));
-    trace!(
-        "Is source trait path? {}",
-        segs.clone().map(|v| v.unwrap_or_default()).join("::")
-    );
-    segs.zip(SOURCE_TRAIT_PATH)
-        .all(|(a, b)| a.as_ref().map(|v| v.as_str()) == Some(*b))
-}
-
-/// Whether given item is an implementation of the Source trait.
-fn is_impl_source_trait(tcx: TyCtxt, item_id: ItemId) -> bool {
-    if let rustc_hir::ItemKind::Impl(imp) = &tcx.hir().item(item_id).kind {
-        if let Some(of_trait) = imp.of_trait {
-            if let Some(def_id) = of_trait.trait_def_id() {
-                return is_source_trait_path(&tcx.def_path(def_id));
-            }
-        }
-    }
-    false
+    None
 }
